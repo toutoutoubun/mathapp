@@ -311,27 +311,12 @@ window.LearningEngine = {
       nextBtn.classList.remove('opacity-50', 'cursor-not-allowed');
       nextBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
       
-      if (isLastStep) {
-        // 最後のステップの場合、ボタンテキストを「完了」に変更
-        const icon = nextBtn.querySelector('i');
-        nextBtn.innerHTML = '完了';
-        if (icon) nextBtn.appendChild(icon);
-      } else {
-        // 通常のステップの場合、ボタンテキストを「次へ」に保持
-        const icon = nextBtn.querySelector('i');
-        if (!nextBtn.textContent.includes('次へ')) {
-          nextBtn.innerHTML = '次へ';
-          if (icon) nextBtn.appendChild(icon);
-        }
-      }
-      
       console.log('✅ 次へボタン有効化');
     } else {
       // クイズ未回答の場合、次へボタンを無効化
       nextBtn.disabled = true;
       nextBtn.classList.add('opacity-50', 'cursor-not-allowed');
       nextBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
-      nextBtn.innerHTML = 'クイズに答えてください';
       
       console.log('🔒 次へボタン無効（クイズ未回答）');
     }
