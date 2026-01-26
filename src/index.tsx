@@ -1732,4 +1732,506 @@ app.get('/admin/phases', (c) => {
   `)
 })
 
+// モジュール管理画面
+app.get('/admin/modules', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>モジュール管理 - 学習アプリ開発プラットフォーム</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-gray-50 min-h-screen">
+        <nav class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold">
+                        <i class="fas fa-book mr-2"></i>
+                        モジュール管理
+                    </h1>
+                    <div class="flex gap-4">
+                        <a href="/admin" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
+                            <i class="fas fa-arrow-left mr-2"></i>管理画面へ戻る
+                        </a>
+                        <a href="/" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
+                            <i class="fas fa-home mr-2"></i>ホーム
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <!-- フェーズ選択 -->
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-layer-group mr-2 text-purple-500"></i>
+                    フェーズを選択
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">フェーズ</label>
+                        <select id="phase-select" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <option value="">フェーズを選択...</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 新規作成フォーム -->
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-plus-circle mr-2 text-green-500"></i>
+                    新しいモジュールを作成
+                </h2>
+                <form id="create-module-form" class="space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">モジュール名 *</label>
+                            <input type="text" name="name" required 
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                   placeholder="例：グラフの読解">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">アイコン（絵文字）</label>
+                            <input type="text" name="icon" 
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                   placeholder="例：📊">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">説明</label>
+                        <textarea name="description" rows="2" 
+                                  class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                  placeholder="このモジュールで学ぶ内容"></textarea>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">カラー</label>
+                            <select name="color" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                                <option value="blue">青</option>
+                                <option value="green">緑</option>
+                                <option value="yellow">黄</option>
+                                <option value="purple">紫</option>
+                                <option value="pink">ピンク</option>
+                                <option value="orange">オレンジ</option>
+                                <option value="red">赤</option>
+                                <option value="indigo">インディゴ</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">表示順序</label>
+                            <input type="number" name="order_index" value="0" min="0"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                    </div>
+                    <button type="submit" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                        <i class="fas fa-plus mr-2"></i>モジュールを作成
+                    </button>
+                </form>
+            </div>
+
+            <!-- モジュール一覧 -->
+            <div class="bg-white rounded-xl shadow-lg p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-list mr-2 text-blue-500"></i>
+                    登録されているモジュール
+                </h2>
+                <div id="modules-list" class="space-y-4">
+                    <p class="text-gray-500 text-center py-8">まずフェーズを選択してください</p>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script>
+          // フェーズ一覧を読み込み
+          async function loadPhases() {
+            try {
+              const response = await axios.get('/api/admin/phases');
+              const phases = response.data.phases;
+              
+              const selectEl = document.getElementById('phase-select');
+              selectEl.innerHTML = '<option value="">フェーズを選択...</option>' +
+                phases.map(phase => \`<option value="\${phase.id}">\${phase.name}</option>\`).join('');
+              
+              // フェーズが選択されたらモジュール一覧を表示
+              selectEl.addEventListener('change', (e) => {
+                const phaseId = e.target.value;
+                if (phaseId) {
+                  loadModules(phaseId);
+                } else {
+                  document.getElementById('modules-list').innerHTML = '<p class="text-gray-500 text-center py-8">まずフェーズを選択してください</p>';
+                }
+              });
+            } catch (error) {
+              console.error('フェーズの読み込みエラー:', error);
+              alert('フェーズの読み込みに失敗しました');
+            }
+          }
+          
+          // モジュール一覧を読み込み
+          async function loadModules(phaseId) {
+            try {
+              const response = await axios.get('/api/admin/modules?phase_id=' + phaseId);
+              const modules = response.data.modules;
+              
+              const listEl = document.getElementById('modules-list');
+              
+              if (modules.length === 0) {
+                listEl.innerHTML = '<p class="text-gray-500 text-center py-8">このフェーズにはまだモジュールが登録されていません</p>';
+                return;
+              }
+              
+              listEl.innerHTML = modules.map(module => \`
+                <div class="border-2 border-gray-200 rounded-lg p-6 hover:border-blue-400 transition">
+                  <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                      <div class="flex items-center gap-3 mb-2">
+                        <span class="text-3xl">\${module.icon || '📚'}</span>
+                        <h3 class="text-xl font-bold text-gray-800">\${module.name}</h3>
+                        <span class="px-3 py-1 bg-\${module.color || 'blue'}-100 text-\${module.color || 'blue'}-700 rounded-full text-sm">
+                          \${module.color || 'blue'}
+                        </span>
+                      </div>
+                      <p class="text-gray-600 mb-3">\${module.description || '説明なし'}</p>
+                      <p class="text-sm text-gray-400">表示順序: \${module.order_index} | ID: \${module.id}</p>
+                    </div>
+                    <div class="flex gap-2 ml-4">
+                      <button onclick="editModule(\${module.id})" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm">
+                        <i class="fas fa-edit mr-1"></i>編集
+                      </button>
+                      <button onclick="deleteModule(\${module.id})" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm">
+                        <i class="fas fa-trash mr-1"></i>削除
+                      </button>
+                      <a href="/admin/steps?module_id=\${module.id}" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm">
+                        <i class="fas fa-tasks mr-1"></i>ステップ管理
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              \`).join('');
+            } catch (error) {
+              console.error('モジュールの読み込みエラー:', error);
+              document.getElementById('modules-list').innerHTML = '<p class="text-red-500 text-center py-8">エラーが発生しました</p>';
+            }
+          }
+          
+          // モジュール作成
+          document.getElementById('create-module-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const phaseId = document.getElementById('phase-select').value;
+            if (!phaseId) {
+              alert('まずフェーズを選択してください');
+              return;
+            }
+            
+            const formData = new FormData(e.target);
+            const data = {
+              phase_id: parseInt(phaseId),
+              name: formData.get('name'),
+              description: formData.get('description'),
+              icon: formData.get('icon'),
+              color: formData.get('color'),
+              order_index: parseInt(formData.get('order_index'))
+            };
+            
+            try {
+              await axios.post('/api/admin/modules', data);
+              alert('モジュールを作成しました！');
+              e.target.reset();
+              loadModules(phaseId);
+            } catch (error) {
+              console.error('モジュール作成エラー:', error);
+              alert('エラーが発生しました');
+            }
+          });
+          
+          // モジュール編集（簡易版）
+          function editModule(id) {
+            alert('編集機能は今後実装予定です（ID: ' + id + '）');
+          }
+          
+          // モジュール削除
+          async function deleteModule(id) {
+            if (!confirm('本当にこのモジュールを削除しますか？')) {
+              return;
+            }
+            // TODO: 削除APIを実装
+            alert('削除機能は今後実装予定です（ID: ' + id + '）');
+          }
+          
+          // ページ読み込み時にフェーズ一覧を取得
+          loadPhases();
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// ステップ管理画面
+app.get('/admin/steps', (c) => {
+  const moduleId = c.req.query('module_id') || '';
+  
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ステップ管理 - 学習アプリ開発プラットフォーム</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-gray-50 min-h-screen">
+        <nav class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold">
+                        <i class="fas fa-tasks mr-2"></i>
+                        ステップ管理
+                    </h1>
+                    <div class="flex gap-4">
+                        <a href="/admin/modules" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
+                            <i class="fas fa-arrow-left mr-2"></i>モジュール管理へ
+                        </a>
+                        <a href="/admin" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
+                            <i class="fas fa-home mr-2"></i>管理画面
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <!-- モジュール選択 -->
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-book mr-2 text-purple-500"></i>
+                    モジュールを選択
+                </h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">フェーズ</label>
+                        <select id="phase-select" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <option value="">フェーズを選択...</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">モジュール</label>
+                        <select id="module-select" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <option value="">モジュールを選択...</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 新規作成フォーム -->
+            <div id="create-step-section" class="hidden">
+                <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4">
+                        <i class="fas fa-plus-circle mr-2 text-green-500"></i>
+                        新しいステップを作成
+                    </h2>
+                    <form id="create-step-form" class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">ステップタイトル *</label>
+                            <input type="text" name="title" required 
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                   placeholder="例：グラフの種類を知ろう">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">説明文</label>
+                            <textarea name="description" rows="4" 
+                                      class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                                      placeholder="このステップで学ぶ内容を説明してください"></textarea>
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">表示順序</label>
+                            <input type="number" name="order_index" value="0" min="0"
+                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        <button type="submit" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                            <i class="fas fa-plus mr-2"></i>ステップを作成
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <!-- ステップ一覧 -->
+            <div class="bg-white rounded-xl shadow-lg p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-list mr-2 text-blue-500"></i>
+                    登録されているステップ
+                </h2>
+                <div id="steps-list" class="space-y-4">
+                    <p class="text-gray-500 text-center py-8">まずモジュールを選択してください</p>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script>
+          const urlParams = new URLSearchParams(window.location.search);
+          const initialModuleId = urlParams.get('module_id');
+          
+          // フェーズ一覧を読み込み
+          async function loadPhases() {
+            try {
+              const response = await axios.get('/api/admin/phases');
+              const phases = response.data.phases;
+              
+              const selectEl = document.getElementById('phase-select');
+              selectEl.innerHTML = '<option value="">フェーズを選択...</option>' +
+                phases.map(phase => \`<option value="\${phase.id}">\${phase.name}</option>\`).join('');
+              
+              selectEl.addEventListener('change', (e) => {
+                const phaseId = e.target.value;
+                if (phaseId) {
+                  loadModules(phaseId);
+                } else {
+                  document.getElementById('module-select').innerHTML = '<option value="">モジュールを選択...</option>';
+                  document.getElementById('steps-list').innerHTML = '<p class="text-gray-500 text-center py-8">まずモジュールを選択してください</p>';
+                  document.getElementById('create-step-section').classList.add('hidden');
+                }
+              });
+              
+              // 初期モジュールIDが指定されている場合
+              if (initialModuleId) {
+                // TODO: フェーズを自動選択してモジュール一覧を読み込む
+              }
+            } catch (error) {
+              console.error('フェーズの読み込みエラー:', error);
+            }
+          }
+          
+          // モジュール一覧を読み込み
+          async function loadModules(phaseId) {
+            try {
+              const response = await axios.get('/api/admin/modules?phase_id=' + phaseId);
+              const modules = response.data.modules;
+              
+              const selectEl = document.getElementById('module-select');
+              selectEl.innerHTML = '<option value="">モジュールを選択...</option>' +
+                modules.map(module => \`<option value="\${module.id}">\${module.name}</option>\`).join('');
+              
+              selectEl.addEventListener('change', (e) => {
+                const moduleId = e.target.value;
+                if (moduleId) {
+                  loadSteps(moduleId);
+                  document.getElementById('create-step-section').classList.remove('hidden');
+                } else {
+                  document.getElementById('steps-list').innerHTML = '<p class="text-gray-500 text-center py-8">まずモジュールを選択してください</p>';
+                  document.getElementById('create-step-section').classList.add('hidden');
+                }
+              });
+              
+              // 初期モジュールIDが指定されている場合
+              if (initialModuleId && modules.find(m => m.id == initialModuleId)) {
+                selectEl.value = initialModuleId;
+                loadSteps(initialModuleId);
+                document.getElementById('create-step-section').classList.remove('hidden');
+              }
+            } catch (error) {
+              console.error('モジュールの読み込みエラー:', error);
+            }
+          }
+          
+          // ステップ一覧を読み込み
+          async function loadSteps(moduleId) {
+            try {
+              const response = await axios.get('/api/admin/steps?module_id=' + moduleId);
+              const steps = response.data.steps;
+              
+              const listEl = document.getElementById('steps-list');
+              
+              if (steps.length === 0) {
+                listEl.innerHTML = '<p class="text-gray-500 text-center py-8">このモジュールにはまだステップが登録されていません</p>';
+                return;
+              }
+              
+              listEl.innerHTML = steps.map((step, index) => \`
+                <div class="border-2 border-gray-200 rounded-lg p-6 hover:border-blue-400 transition">
+                  <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                      <div class="flex items-center gap-3 mb-2">
+                        <span class="flex items-center justify-center w-8 h-8 bg-blue-500 text-white rounded-full font-bold">
+                          \${index + 1}
+                        </span>
+                        <h3 class="text-xl font-bold text-gray-800">\${step.title}</h3>
+                      </div>
+                      <p class="text-gray-600 mb-3">\${step.description || '説明なし'}</p>
+                      <p class="text-sm text-gray-400">表示順序: \${step.order_index} | ID: \${step.id}</p>
+                    </div>
+                    <div class="flex gap-2 ml-4">
+                      <button onclick="editStep(\${step.id})" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm">
+                        <i class="fas fa-edit mr-1"></i>編集
+                      </button>
+                      <button onclick="deleteStep(\${step.id})" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm">
+                        <i class="fas fa-trash mr-1"></i>削除
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              \`).join('');
+            } catch (error) {
+              console.error('ステップの読み込みエラー:', error);
+              document.getElementById('steps-list').innerHTML = '<p class="text-red-500 text-center py-8">エラーが発生しました</p>';
+            }
+          }
+          
+          // ステップ作成
+          document.getElementById('create-step-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const moduleId = document.getElementById('module-select').value;
+            if (!moduleId) {
+              alert('まずモジュールを選択してください');
+              return;
+            }
+            
+            const formData = new FormData(e.target);
+            const data = {
+              module_id: parseInt(moduleId),
+              title: formData.get('title'),
+              description: formData.get('description'),
+              order_index: parseInt(formData.get('order_index'))
+            };
+            
+            try {
+              await axios.post('/api/admin/steps', data);
+              alert('ステップを作成しました！');
+              e.target.reset();
+              loadSteps(moduleId);
+            } catch (error) {
+              console.error('ステップ作成エラー:', error);
+              alert('エラーが発生しました');
+            }
+          });
+          
+          // ステップ編集
+          function editStep(id) {
+            alert('編集機能は今後実装予定です（ID: ' + id + '）');
+          }
+          
+          // ステップ削除
+          function deleteStep(id) {
+            if (!confirm('本当にこのステップを削除しますか？')) {
+              return;
+            }
+            alert('削除機能は今後実装予定です（ID: ' + id + '）');
+          }
+          
+          // ページ読み込み時にフェーズ一覧を取得
+          loadPhases();
+        </script>
+    </body>
+    </html>
+  `)
+})
+
 export default app
