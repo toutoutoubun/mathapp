@@ -972,12 +972,51 @@ app.get('/module/formulas', (c) => {
         <script src="/static/app.js"></script>
         <script src="/static/module-formulas.js"></script>
         <script src="/static/learn-engine.js"></script>
-        <script src="/static/module-page.js"></script>
         <script>
-          // Initialize with formulas module
-          if (typeof initializeModulePage === 'function') {
-            initializeModulePage('formulas');
+          // 公式集モジュールを初期化
+          document.addEventListener('DOMContentLoaded', function() {
+            console.log('=== 公式集ページ初期化 ===');
+            
+            if (!window.formulasSteps || window.formulasSteps.length === 0) {
+              console.error('❌ 公式集ステップデータが見つかりません');
+              return;
+            }
+            
+            console.log('✅ 公式集ステップデータ取得:', window.formulasSteps.length, 'ステップ');
+            
+            // 学習エンジンを初期化
+            if (window.LearningEngine) {
+              const success = window.LearningEngine.init('formulas', window.formulasSteps);
+              if (success) {
+                window.LearningEngine.renderStepNavigation();
+                window.LearningEngine.renderStep(0);
+                window.LearningEngine.updateNavigationButtons();
+                console.log('✅ 公式集モジュール初期化完了');
+              }
+            }
+          });
+          
+          // グローバル関数を定義
+          function goToPreviousStep() {
+            if (window.LearningEngine && window.LearningEngine.currentStepIndex > 0) {
+              window.LearningEngine.goToStep(window.LearningEngine.currentStepIndex - 1);
+            }
           }
+          
+          function goToNextStep() {
+            if (window.LearningEngine) {
+              const currentIndex = window.LearningEngine.currentStepIndex;
+              const totalSteps = window.LearningEngine.moduleSteps.length;
+              if (currentIndex === totalSteps - 1) {
+                window.LearningEngine.completeModule();
+              } else {
+                window.LearningEngine.goToStep(currentIndex + 1);
+              }
+            }
+          }
+          
+          window.goToPreviousStep = goToPreviousStep;
+          window.goToNextStep = goToNextStep;
         </script>
     </body>
     </html>
@@ -1039,12 +1078,51 @@ app.get('/module/integers', (c) => {
         <script src="/static/app.js"></script>
         <script src="/static/module-integers.js"></script>
         <script src="/static/learn-engine.js"></script>
-        <script src="/static/module-page.js"></script>
         <script>
-          // Initialize with integers module
-          if (typeof initializeModulePage === 'function') {
-            initializeModulePage('integers');
+          // 正の数・負の数モジュールを初期化
+          document.addEventListener('DOMContentLoaded', function() {
+            console.log('=== 正の数・負の数ページ初期化 ===');
+            
+            if (!window.integersSteps || window.integersSteps.length === 0) {
+              console.error('❌ 正の数・負の数ステップデータが見つかりません');
+              return;
+            }
+            
+            console.log('✅ 正の数・負の数ステップデータ取得:', window.integersSteps.length, 'ステップ');
+            
+            // 学習エンジンを初期化
+            if (window.LearningEngine) {
+              const success = window.LearningEngine.init('integers', window.integersSteps);
+              if (success) {
+                window.LearningEngine.renderStepNavigation();
+                window.LearningEngine.renderStep(0);
+                window.LearningEngine.updateNavigationButtons();
+                console.log('✅ 正の数・負の数モジュール初期化完了');
+              }
+            }
+          });
+          
+          // グローバル関数を定義
+          function goToPreviousStep() {
+            if (window.LearningEngine && window.LearningEngine.currentStepIndex > 0) {
+              window.LearningEngine.goToStep(window.LearningEngine.currentStepIndex - 1);
+            }
           }
+          
+          function goToNextStep() {
+            if (window.LearningEngine) {
+              const currentIndex = window.LearningEngine.currentStepIndex;
+              const totalSteps = window.LearningEngine.moduleSteps.length;
+              if (currentIndex === totalSteps - 1) {
+                window.LearningEngine.completeModule();
+              } else {
+                window.LearningEngine.goToStep(currentIndex + 1);
+              }
+            }
+          }
+          
+          window.goToPreviousStep = goToPreviousStep;
+          window.goToNextStep = goToNextStep;
         </script>
     </body>
     </html>

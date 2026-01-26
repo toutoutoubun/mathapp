@@ -163,6 +163,10 @@ window.LearningEngine = {
       </div>
     `;
     
+    // デバッグ: contentAreaの内容を確認
+    console.log('📝 contentArea に挿入されたHTML長:', contentArea.innerHTML.length, '文字');
+    console.log('📝 contentArea の最初の200文字:', contentArea.innerHTML.substring(0, 200));
+    
     // イベントリスナーを設定（DOM更新後に実行）
     setTimeout(() => {
       this.attachEventListeners(step);
