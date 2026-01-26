@@ -103,7 +103,7 @@ window.LearningEngine = {
         </div>
         
         <h2 class="text-2xl font-bold mb-4 text-gray-800">${step.title}</h2>
-        <p class="text-gray-600 mb-6">${step.description}</p>
+        ${step.description ? `<p class="text-gray-600 mb-6">${step.description}</p>` : ''}
         
         <div class="mb-8">
           ${step.content}
@@ -147,6 +147,15 @@ window.LearningEngine = {
     // イベントリスナーを設定（DOM更新後に実行）
     setTimeout(() => {
       this.attachEventListeners(step);
+      
+      // デバッグ用: quiz-sectionの存在を確認
+      const quizSection = document.getElementById('quiz-section');
+      const understandingCheck = document.getElementById('understanding-check');
+      console.log('🔍 デバッグ情報:', {
+        'quiz-section exists': !!quizSection,
+        'understanding-check exists': !!understandingCheck,
+        'step has quiz': !!step.quiz
+      });
     }, 100);
     
     console.log('✓ ステップ描画完了');
