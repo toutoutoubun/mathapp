@@ -79,7 +79,19 @@ function renderStep(index) {
         ${step.content}
       </div>
 
-      <div class="bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl p-6">
+      <!-- 理解確認チェックボックス -->
+      <div class="bg-blue-50 border-2 border-blue-200 rounded-xl p-6 mb-6">
+        <label class="flex items-start cursor-pointer">
+          <input type="checkbox" id="understanding-check" class="mt-1 w-5 h-5 text-blue-600 rounded focus:ring-blue-500">
+          <span class="ml-3 text-lg text-gray-800">
+            <i class="fas fa-check-circle text-blue-600 mr-2"></i>
+            <strong>上の説明を読んで、理解しました</strong>
+            <span class="block text-sm text-gray-600 mt-1">チェックを入れると練習問題が表示されます</span>
+          </span>
+        </label>
+      </div>
+
+      <div id="quiz-section" class="hidden bg-gradient-to-r from-purple-50 to-blue-50 rounded-xl p-6">
         <h4 class="text-xl font-bold text-gray-800 mb-4">
           <i class="fas fa-question-circle mr-2 text-purple-600"></i>
           練習問題
@@ -106,6 +118,27 @@ function renderStep(index) {
 
   // クイズオプションにイベント
   setTimeout(() => {
+    // 理解確認チェックボックスのイベント
+    const understandingCheck = contentArea.querySelector('#understanding-check');
+    const quizSection = contentArea.querySelector('#quiz-section');
+    
+    if (understandingCheck && quizSection) {
+      understandingCheck.addEventListener('change', function() {
+        if (this.checked) {
+          console.log('✓ 理解確認チェック - クイズ表示');
+          quizSection.classList.remove('hidden');
+          quizSection.classList.add('fade-in');
+          // クイズセクションまでスクロール
+          quizSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+          console.log('✗ 理解確認チェック解除 - クイズ非表示');
+          quizSection.classList.add('hidden');
+          window.graphLearning.quizAnswered = false;
+          updateNavigationButtons();
+        }
+      });
+    }
+    
     contentArea.querySelectorAll('.quiz-option').forEach(optionEl => {
       optionEl.addEventListener('click', function() {
         handleQuizAnswer(this, step.quiz);
