@@ -16,23 +16,32 @@ app.use('/static/*', serveStatic({ root: './' }))
 
 // ==================== Teacher API Routes ====================
 
-// エディタ一覧取得
-app.get('/api/teacher/editors', async (c) => {
+// セクション一覧取得
+app.get('/api/teacher/sections', async (c) => {
   const { DB } = c.env
-  const result = await DB.prepare('SELECT * FROM editors ORDER BY created_at DESC').all()
-  return c.json({ editors: result.results })
+  const result = await DB.prepare('SELECT * FROM sections ORDER BY created_at DESC').all()
+  return c.json({ sections: result.results })
 })
 
-// エディタ作成
-app.post('/api/teacher/editors', async (c) => {
+// セクション作成
+app.post('/api/teacher/sections', async (c) => {
   const { DB } = c.env
   const { name, description, grade_level, subject } = await c.req.json()
   
   const result = await DB.prepare(
-    'INSERT INTO editors (name, description, grade_level, subject) VALUES (?, ?, ?, ?)'
+    'INSERT INTO sections (name, description, grade_level, subject) VALUES (?, ?, ?, ?)'
   ).bind(name, description || null, grade_level || null, subject || null).run()
   
   return c.json({ success: true, id: result.meta.last_row_id })
+})
+
+// ==================== Student API Routes ====================
+
+// セクション一覧取得（生徒用）
+app.get('/api/student/sections', async (c) => {
+  const { DB } = c.env
+  const result = await DB.prepare('SELECT * FROM sections ORDER BY grade_level, subject').all()
+  return c.json({ sections: result.results })
 })
 
 // ==================== Student API Routes ====================
@@ -249,10 +258,10 @@ app.get('/', (c) => {
 
             <!-- 管理機能カード -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                <!-- エディタ管理 -->
-                <a href="/teacher/editors" class="block p-6 bg-gradient-to-br from-indigo-100 to-indigo-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
+                <!-- セクション管理 -->
+                <a href="/teacher/sections" class="block p-6 bg-gradient-to-br from-indigo-100 to-indigo-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
                     <div class="text-5xl mb-4">📚</div>
-                    <h3 class="text-xl font-bold text-gray-800 mb-2">エディタ管理</h3>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">セクション管理</h3>
                     <p class="text-gray-600 text-sm mb-4">
                         学年単位のプロジェクトを作成・管理
                     </p>
@@ -355,7 +364,11 @@ app.get('/student', (c) => {
                         <i class="fas fa-graduation-cap mr-2"></i>
                         学習アプリ
                     </h1>
-                    <div class="flex gap-4">
+                    <div class="flex gap-4 items-center">
+                        <!-- セクション選択プルダウン -->
+                        <select id="section-select" class="px-4 py-2 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none">
+                            <option value="">学年を選択...</option>
+                        </select>
                         <a href="/student" class="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition">
                             <i class="fas fa-home mr-2"></i>ホーム
                         </a>
@@ -1495,14 +1508,14 @@ app.get('/module/integers', (c) => {
 // フェーズ一覧取得
 app.get('/api/teacher/phases', async (c) => {
   const { DB } = c.env
-  const editor_id = c.req.query('editor_id')
+  const section_id = c.req.query('section_id')
   
   let query = 'SELECT * FROM phases'
   let params: any[] = []
   
-  if (editor_id) {
-    query += ' WHERE editor_id = ?'
-    params.push(editor_id)
+  if (section_id) {
+    query += ' WHERE section_id = ?'
+    params.push(section_id)
   }
   
   query += ' ORDER BY order_index'
@@ -1513,11 +1526,11 @@ app.get('/api/teacher/phases', async (c) => {
 // フェーズ作成
 app.post('/api/teacher/phases', async (c) => {
   const { DB } = c.env
-  const { editor_id, name, description, order_index } = await c.req.json()
+  const { section_id, name, description, order_index } = await c.req.json()
   
   const result = await DB.prepare(
-    'INSERT INTO phases (editor_id, name, description, order_index) VALUES (?, ?, ?, ?)'
-  ).bind(editor_id || null, name, description || null, order_index || 0).run()
+    'INSERT INTO phases (section_id, name, description, order_index) VALUES (?, ?, ?, ?)'
+  ).bind(section_id || null, name, description || null, order_index || 0).run()
   
   return c.json({ success: true, id: result.meta.last_row_id })
 })
