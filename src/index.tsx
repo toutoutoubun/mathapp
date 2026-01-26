@@ -233,7 +233,7 @@ app.get('/', (c) => {
                             数字が表す「量」を理解します
                         </p>
                         <div class="mt-4 text-sm text-green-600 font-semibold">
-                            準備中
+                            5つのステップ →
                         </div>
                     </a>
 
@@ -245,7 +245,7 @@ app.get('/', (c) => {
                             単位を揃えて比べる方法を学びます
                         </p>
                         <div class="mt-4 text-sm text-yellow-600 font-semibold">
-                            準備中
+                            4つのステップ →
                         </div>
                     </a>
 
@@ -257,7 +257,7 @@ app.get('/', (c) => {
                             「1あたり」で考える方法を学びます
                         </p>
                         <div class="mt-4 text-sm text-pink-600 font-semibold">
-                            準備中
+                            2つのステップ →
                         </div>
                     </a>
 
@@ -269,7 +269,7 @@ app.get('/', (c) => {
                             だいたいの数で考える方法を学びます
                         </p>
                         <div class="mt-4 text-sm text-purple-600 font-semibold">
-                            準備中
+                            2つのステップ →
                         </div>
                     </a>
                 </div>
@@ -366,6 +366,254 @@ app.get('/module/graph_basics', (c) => {
         <script src="/static/app.js?v=5"></script>
         <script src="/static/graph-module.js?v=5"></script>
         <script src="/static/graph-learn-v3.js?v=5"></script>
+    </body>
+    </html>
+  `)
+})
+
+// モジュール2: 基数性の再構築
+app.get('/module/cardinality', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>基数性の再構築 - 中学数学基礎概念支援アプリ</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <link href="/static/style.css" rel="stylesheet">
+    </head>
+    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
+        <nav class="bg-white shadow-md">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold text-purple-600">
+                        <i class="fas fa-graduation-cap mr-2"></i>数学の冒険
+                    </h1>
+                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
+                        <i class="fas fa-home mr-2"></i>ホームに戻る
+                    </a>
+                </div>
+            </div>
+        </nav>
+        <div class="max-w-5xl mx-auto px-4 py-8">
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+                <div class="flex items-center gap-4 mb-4">
+                    <div class="text-6xl">🔢</div>
+                    <div>
+                        <h2 class="text-3xl font-bold text-gray-800">基数性の再構築</h2>
+                        <p class="text-gray-600 mt-2">数字が表す「量」を理解しましょう</p>
+                    </div>
+                </div>
+                <div class="step-nav mt-8" id="step-nav"></div>
+            </div>
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8" id="content-area"></div>
+            <div class="flex justify-between items-center">
+                <button id="prev-btn" onclick="window.goToPreviousStep()" class="px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-arrow-left mr-2"></i>前へ
+                </button>
+                <div id="completion-message" class="hidden text-center">
+                    <div class="text-4xl mb-2">🎉</div>
+                    <p class="text-xl font-bold text-green-600">おめでとうございます！</p>
+                    <p class="text-gray-600 mt-2">基数性の再構築モジュールを完了しました！</p>
+                </div>
+                <button id="next-btn" class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">
+                    次へ<i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+        </div>
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script src="/static/app.js"></script>
+        <script src="/static/learn-engine.js"></script>
+        <script src="/static/module-cardinality.js"></script>
+        <script src="/static/module-page.js"></script>
+    </body>
+    </html>
+  `)
+})
+
+// モジュール3: 単位と量
+app.get('/module/units', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>単位と量 - 中学数学基礎概念支援アプリ</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <link href="/static/style.css" rel="stylesheet">
+    </head>
+    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
+        <nav class="bg-white shadow-md">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold text-purple-600">
+                        <i class="fas fa-graduation-cap mr-2"></i>数学の冒険
+                    </h1>
+                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
+                        <i class="fas fa-home mr-2"></i>ホームに戻る
+                    </a>
+                </div>
+            </div>
+        </nav>
+        <div class="max-w-5xl mx-auto px-4 py-8">
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+                <div class="flex items-center gap-4 mb-4">
+                    <div class="text-6xl">📏</div>
+                    <div>
+                        <h2 class="text-3xl font-bold text-gray-800">単位と量</h2>
+                        <p class="text-gray-600 mt-2">単位を揃えて比べる方法を学びましょう</p>
+                    </div>
+                </div>
+                <div class="step-nav mt-8" id="step-nav"></div>
+            </div>
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8" id="content-area"></div>
+            <div class="flex justify-between items-center">
+                <button id="prev-btn" onclick="window.goToPreviousStep()" class="px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-arrow-left mr-2"></i>前へ
+                </button>
+                <div id="completion-message" class="hidden text-center">
+                    <div class="text-4xl mb-2">🎉</div>
+                    <p class="text-xl font-bold text-green-600">おめでとうございます！</p>
+                    <p class="text-gray-600 mt-2">単位と量モジュールを完了しました！</p>
+                </div>
+                <button id="next-btn" class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">
+                    次へ<i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+        </div>
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script src="/static/app.js"></script>
+        <script src="/static/learn-engine.js"></script>
+        <script src="/static/module-units.js"></script>
+        <script src="/static/module-page.js"></script>
+    </body>
+    </html>
+  `)
+})
+
+// モジュール4: 割合の直感
+app.get('/module/proportions', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>割合の直感 - 中学数学基礎概念支援アプリ</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <link href="/static/style.css" rel="stylesheet">
+    </head>
+    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
+        <nav class="bg-white shadow-md">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold text-purple-600">
+                        <i class="fas fa-graduation-cap mr-2"></i>数学の冒険
+                    </h1>
+                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
+                        <i class="fas fa-home mr-2"></i>ホームに戻る
+                    </a>
+                </div>
+            </div>
+        </nav>
+        <div class="max-w-5xl mx-auto px-4 py-8">
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+                <div class="flex items-center gap-4 mb-4">
+                    <div class="text-6xl">🍰</div>
+                    <div>
+                        <h2 class="text-3xl font-bold text-gray-800">割合の直感</h2>
+                        <p class="text-gray-600 mt-2">「1あたり」で考える方法を学びましょう</p>
+                    </div>
+                </div>
+                <div class="step-nav mt-8" id="step-nav"></div>
+            </div>
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8" id="content-area"></div>
+            <div class="flex justify-between items-center">
+                <button id="prev-btn" onclick="window.goToPreviousStep()" class="px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-arrow-left mr-2"></i>前へ
+                </button>
+                <div id="completion-message" class="hidden text-center">
+                    <div class="text-4xl mb-2">🎉</div>
+                    <p class="text-xl font-bold text-green-600">おめでとうございます！</p>
+                    <p class="text-gray-600 mt-2">割合の直感モジュールを完了しました！</p>
+                </div>
+                <button id="next-btn" class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">
+                    次へ<i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+        </div>
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script src="/static/app.js"></script>
+        <script src="/static/learn-engine.js"></script>
+        <script src="/static/module-proportions.js"></script>
+        <script src="/static/module-page.js"></script>
+    </body>
+    </html>
+  `)
+})
+
+// モジュール5: 概数・おおよその判断
+app.get('/module/approximation', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>概数・おおよその判断 - 中学数学基礎概念支援アプリ</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <link href="/static/style.css" rel="stylesheet">
+    </head>
+    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
+        <nav class="bg-white shadow-md">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold text-purple-600">
+                        <i class="fas fa-graduation-cap mr-2"></i>数学の冒険
+                    </h1>
+                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
+                        <i class="fas fa-home mr-2"></i>ホームに戻る
+                    </a>
+                </div>
+            </div>
+        </nav>
+        <div class="max-w-5xl mx-auto px-4 py-8">
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+                <div class="flex items-center gap-4 mb-4">
+                    <div class="text-6xl">⚖️</div>
+                    <div>
+                        <h2 class="text-3xl font-bold text-gray-800">概数・おおよその判断</h2>
+                        <p class="text-gray-600 mt-2">だいたいの数で考える方法を学びましょう</p>
+                    </div>
+                </div>
+                <div class="step-nav mt-8" id="step-nav"></div>
+            </div>
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8" id="content-area"></div>
+            <div class="flex justify-between items-center">
+                <button id="prev-btn" onclick="window.goToPreviousStep()" class="px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-arrow-left mr-2"></i>前へ
+                </button>
+                <div id="completion-message" class="hidden text-center">
+                    <div class="text-4xl mb-2">🎉</div>
+                    <p class="text-xl font-bold text-green-600">おめでとうございます！</p>
+                    <p class="text-gray-600 mt-2">概数・おおよその判断モジュールを完了しました！</p>
+                </div>
+                <button id="next-btn" class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">
+                    次へ<i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+        </div>
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script src="/static/app.js"></script>
+        <script src="/static/learn-engine.js"></script>
+        <script src="/static/module-approximation.js"></script>
+        <script src="/static/module-page.js"></script>
     </body>
     </html>
   `)
