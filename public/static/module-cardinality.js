@@ -475,3 +475,439 @@ const cardinalitySteps = [
 // ステップをグローバルに登録
 window.cardinalitySteps = cardinalitySteps;
 console.log('✅ 基数性モジュール読み込み完了:', cardinalitySteps.length, 'ステップ');
+
+  // ========================================
+  // ステップ6: 0（ゼロ）の意味
+  // ========================================
+  {
+    id: 'cardinal_6',
+    title: 'ステップ6: 0（ゼロ）の意味',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-circle-notch mr-2 text-purple-500"></i>
+          0（ゼロ）って何だろう？
+        </h3>
+        
+        <div class="bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            「0」は「<strong>何もない</strong>」ことを表す特別な数です。<br>
+            ケニアのナイロビでマンゴーを1つも持っていないとき、<strong>0個</strong>と言います。
+          </p>
+          
+          <div class="grid grid-cols-3 gap-4 mb-4">
+            <div class="bg-white p-4 rounded-lg text-center shadow-sm">
+              <div class="text-4xl mb-2">🥭🥭🥭</div>
+              <div class="text-xl font-bold text-gray-800">3個</div>
+              <div class="text-sm text-gray-600">マンゴーがある</div>
+            </div>
+            <div class="bg-white p-4 rounded-lg text-center shadow-sm">
+              <div class="text-4xl mb-2">🥭</div>
+              <div class="text-xl font-bold text-gray-800">1個</div>
+              <div class="text-sm text-gray-600">マンゴーがある</div>
+            </div>
+            <div class="bg-white p-4 rounded-lg text-center shadow-sm border-4 border-purple-300">
+              <div class="text-4xl mb-2">⭕</div>
+              <div class="text-xl font-bold text-purple-600">0個</div>
+              <div class="text-sm text-gray-600">何もない</div>
+            </div>
+          </div>
+        </div>
+        
+        <div class="bg-blue-50 p-4 rounded-lg mb-4">
+          <p class="text-gray-700">
+            <i class="fas fa-lightbulb text-yellow-500 mr-2"></i>
+            <strong>0の大切さ:</strong> 何もないことを表す「0」があることで、<br>
+            「あるかないか」をはっきり区別できます。
+          </p>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: 'タンザニアの市場で、バナナを全部売り切りました。残りは何本ですか？',
+      options: [
+        { id: 'A', text: '1本', correct: false, explanation: '売り切ったので、残りはありません。' },
+        { id: 'B', text: '0本', correct: true, explanation: '正解！全部売ったので、残りは<strong>0本</strong>です。何もないことを「0」で表します。' },
+        { id: 'C', text: '数えられない', correct: false, explanation: '何もない状態も「0」という数で表せます。' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ7: 数の順序（数直線で並べる）
+  // ========================================
+  {
+    id: 'cardinal_7',
+    title: 'ステップ7: 数の順序',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-arrow-right mr-2 text-green-500"></i>
+          数は順番に並んでいる
+        </h3>
+        
+        <div class="bg-gradient-to-r from-green-50 to-blue-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            数は、小さい方から大きい方へ<strong>順番に並んで</strong>います。<br>
+            これを<strong>数直線</strong>で見てみましょう。
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <svg viewBox="0 0 600 100" class="w-full">
+              <!-- 数直線 -->
+              <line x1="50" y1="50" x2="550" y2="50" stroke="#333" stroke-width="3"/>
+              <!-- 目盛りと数字 -->
+              <g id="ticks">
+                ${[0,1,2,3,4,5,6,7,8,9,10].map((n) => `
+                  <line x1="${50 + n*50}" y1="45" x2="${50 + n*50}" y2="55" stroke="#333" stroke-width="2"/>
+                  <text x="${50 + n*50}" y="75" text-anchor="middle" font-size="18" font-weight="bold">${n}</text>
+                `).join('')}
+              </g>
+              <!-- 矢印 -->
+              <polygon points="550,50 540,45 540,55" fill="#333"/>
+            </svg>
+          </div>
+          
+          <p class="text-gray-700 mb-2">
+            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+            数直線では、右に行くほど数が<strong>大きく</strong>なります。
+          </p>
+          <p class="text-gray-700">
+            <i class="fas fa-check-circle text-green-500 mr-2"></i>
+            数と数の<strong>間隔</strong>は同じです。
+          </p>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: '数直線で、5の右隣にある数はどれですか？',
+      options: [
+        { id: 'A', text: '4', correct: false, explanation: '4は5の左側（小さい方）にあります。' },
+        { id: 'B', text: '6', correct: true, explanation: '正解！数直線では右に行くほど大きくなるので、5の右隣は<strong>6</strong>です。' },
+        { id: 'C', text: '10', correct: false, explanation: '10は5より大きいですが、すぐ隣ではありません。' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ8: 1ずつ増える・減る
+  // ========================================
+  {
+    id: 'cardinal_8',
+    title: 'ステップ8: 1ずつ増える・減る',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-plus-circle mr-2 text-blue-500"></i>
+          数は1ずつ変わる
+        </h3>
+        
+        <div class="bg-gradient-to-r from-blue-50 to-purple-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            数直線で<strong>右に1つ進む</strong>と、数が<strong>1増えます</strong>。<br>
+            <strong>左に1つ戻る</strong>と、数が<strong>1減ります</strong>。
+          </p>
+          
+          <div class="grid grid-cols-2 gap-6 mb-4">
+            <!-- 増える例 -->
+            <div class="bg-white p-4 rounded-lg shadow-sm">
+              <h4 class="font-bold text-blue-600 mb-3">
+                <i class="fas fa-arrow-right mr-2"></i>
+                1増える（右へ）
+              </h4>
+              <div class="space-y-2 text-lg">
+                <div>5 → <strong class="text-blue-600">6</strong></div>
+                <div>7 → <strong class="text-blue-600">8</strong></div>
+                <div>12 → <strong class="text-blue-600">13</strong></div>
+              </div>
+            </div>
+            
+            <!-- 減る例 -->
+            <div class="bg-white p-4 rounded-lg shadow-sm">
+              <h4 class="font-bold text-red-600 mb-3">
+                <i class="fas fa-arrow-left mr-2"></i>
+                1減る（左へ）
+              </h4>
+              <div class="space-y-2 text-lg">
+                <div>6 → <strong class="text-red-600">5</strong></div>
+                <div>8 → <strong class="text-red-600">7</strong></div>
+                <div>13 → <strong class="text-red-600">12</strong></div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-yellow-50 p-4 rounded-lg">
+            <p class="text-gray-700">
+              <i class="fas fa-star text-yellow-500 mr-2"></i>
+              エチオピアでコーヒー豆が8粒あります。1粒食べると、残りは<strong>7粒</strong>になります。
+            </p>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: 'ナイジェリアの農場でヤギが9頭います。1頭増えると何頭になりますか？',
+      options: [
+        { id: 'A', text: '8頭', correct: false, explanation: '8頭は1頭減った場合です。' },
+        { id: 'B', text: '10頭', correct: true, explanation: '正解！9に1を足すと<strong>10</strong>になります。数直線で右に1つ進みました。' },
+        { id: 'C', text: '11頭', correct: false, explanation: '11頭は2頭増えた場合です。' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ9: 大きい数のイメージ（100まで）
+  // ========================================
+  {
+    id: 'cardinal_9',
+    title: 'ステップ9: 大きい数のイメージ',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-expand-arrows-alt mr-2 text-orange-500"></i>
+          100ってどれくらい？
+        </h3>
+        
+        <div class="bg-gradient-to-r from-orange-50 to-red-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            10が10個集まると、<strong>100</strong>になります。<br>
+            これはとても大きな数です！
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <h4 class="font-bold text-gray-800 mb-3">10のまとまりを10個</h4>
+            <div class="grid grid-cols-5 gap-2">
+              ${Array(10).fill(0).map((_, i) => `
+                <div class="bg-blue-100 p-2 rounded text-center border-2 border-blue-300">
+                  <div class="text-sm font-bold text-blue-600">10</div>
+                </div>
+              `).join('')}
+            </div>
+            <div class="text-center mt-4 text-2xl font-bold text-orange-600">
+              10 × 10 = 100
+            </div>
+          </div>
+          
+          <div class="bg-green-50 p-4 rounded-lg mb-4">
+            <p class="text-gray-700 mb-2">
+              <i class="fas fa-globe-africa text-green-600 mr-2"></i>
+              <strong>身近な例:</strong>
+            </p>
+            <ul class="space-y-1 text-gray-700 ml-6">
+              <li>• ガーナのカカオ豆100粒</li>
+              <li>• セネガルの市場のピーナッツ100個</li>
+              <li>• ウガンダの小学校の生徒100人</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: '10のまとまりが5個あります。全部で何になりますか？',
+      options: [
+        { id: 'A', text: '15', correct: false, explanation: '10 + 5 = 15ではなく、10が5個という意味です。' },
+        { id: 'B', text: '50', correct: true, explanation: '正解！10 × 5 = <strong>50</strong>です。10のまとまり5個分です。' },
+        { id: 'C', text: '100', correct: false, explanation: '100は10のまとまりが10個の場合です。' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ10: 数の分解（5を分ける）
+  // ========================================
+  {
+    id: 'cardinal_10',
+    title: 'ステップ10: 数を分ける',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-object-ungroup mr-2 text-teal-500"></i>
+          数は分けられる
+        </h3>
+        
+        <div class="bg-gradient-to-r from-teal-50 to-cyan-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            1つの数は、いろいろな方法で<strong>小さい数に分けられます</strong>。<br>
+            例えば、5を分けてみましょう。
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <h4 class="font-bold text-gray-800 mb-4 text-center">5の分け方</h4>
+            <div class="space-y-3">
+              <div class="flex items-center justify-center gap-3 p-3 bg-teal-50 rounded">
+                <span class="text-2xl">🥭🥭🥭🥭🥭</span>
+                <span class="text-xl font-bold">=</span>
+                <span class="text-2xl">🥭🥭</span>
+                <span class="text-xl">+</span>
+                <span class="text-2xl">🥭🥭🥭</span>
+                <span class="text-gray-600 ml-3">(2 + 3)</span>
+              </div>
+              
+              <div class="flex items-center justify-center gap-3 p-3 bg-teal-50 rounded">
+                <span class="text-2xl">🥭🥭🥭🥭🥭</span>
+                <span class="text-xl font-bold">=</span>
+                <span class="text-2xl">🥭</span>
+                <span class="text-xl">+</span>
+                <span class="text-2xl">🥭🥭🥭🥭</span>
+                <span class="text-gray-600 ml-3">(1 + 4)</span>
+              </div>
+              
+              <div class="flex items-center justify-center gap-3 p-3 bg-teal-50 rounded">
+                <span class="text-2xl">🥭🥭🥭🥭🥭</span>
+                <span class="text-xl font-bold">=</span>
+                <span class="text-2xl">🥭🥭🥭</span>
+                <span class="text-xl">+</span>
+                <span class="text-2xl">🥭🥭</span>
+                <span class="text-gray-600 ml-3">(3 + 2)</span>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-blue-50 p-4 rounded-lg">
+            <p class="text-gray-700">
+              <i class="fas fa-info-circle text-blue-500 mr-2"></i>
+              どんな分け方をしても、合わせると<strong>元の数</strong>になります。
+            </p>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: 'マリでピーナッツが7個あります。3個と何個に分けられますか？',
+      options: [
+        { id: 'A', text: '3個', correct: false, explanation: '3 + 3 = 6で、7にはなりません。' },
+        { id: 'B', text: '4個', correct: true, explanation: '正解！3 + 4 = <strong>7</strong>です。7を3と4に分けられます。' },
+        { id: 'C', text: '5個', correct: false, explanation: '3 + 5 = 8で、7より大きくなります。' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ11: 数の合成（合わせていくつ）
+  // ========================================
+  {
+    id: 'cardinal_11',
+    title: 'ステップ11: 数を合わせる',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-plus-square mr-2 text-indigo-500"></i>
+          小さい数を合わせると大きい数になる
+        </h3>
+        
+        <div class="bg-gradient-to-r from-indigo-50 to-purple-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            2つの数を<strong>合わせる</strong>と、大きい数になります。<br>
+            これを<strong>たし算</strong>と言います。
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <h4 class="font-bold text-gray-800 mb-4">南アフリカのリンゴ</h4>
+            <div class="flex items-center justify-center gap-4 mb-4">
+              <div class="text-center">
+                <div class="text-4xl mb-2">🍎🍎🍎</div>
+                <div class="text-xl font-bold">3個</div>
+              </div>
+              <div class="text-4xl font-bold text-indigo-600">+</div>
+              <div class="text-center">
+                <div class="text-4xl mb-2">🍎🍎</div>
+                <div class="text-xl font-bold">2個</div>
+              </div>
+              <div class="text-4xl font-bold text-gray-600">=</div>
+              <div class="text-center">
+                <div class="text-4xl mb-2">🍎🍎🍎🍎🍎</div>
+                <div class="text-xl font-bold text-indigo-600">5個</div>
+              </div>
+            </div>
+            <p class="text-center text-lg text-gray-700">
+              3 + 2 = <strong class="text-indigo-600">5</strong>
+            </p>
+          </div>
+          
+          <div class="bg-yellow-50 p-4 rounded-lg">
+            <p class="text-gray-700">
+              <i class="fas fa-lightbulb text-yellow-500 mr-2"></i>
+              合わせると、<strong>もとの数より大きく</strong>なります。
+            </p>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: 'モロッコでオレンジが4個、レモンが3個あります。合わせて何個ですか？',
+      options: [
+        { id: 'A', text: '6個', correct: false, explanation: '4 + 3 = 7です。もう一度数えてみましょう。' },
+        { id: 'B', text: '7個', correct: true, explanation: '正解！4 + 3 = <strong>7個</strong>です。オレンジとレモンを合わせました。' },
+        { id: 'C', text: '8個', correct: false, explanation: '4 + 3 = 7です。8は4 + 4です。' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ12: 基数性の総合練習
+  // ========================================
+  {
+    id: 'cardinal_12',
+    title: 'ステップ12: 総合練習',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-trophy mr-2 text-yellow-500"></i>
+          学んだことを使ってみよう
+        </h3>
+        
+        <div class="bg-gradient-to-r from-yellow-50 to-orange-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            これまで学んだ<strong>基数性</strong>の考え方を使って、問題を解いてみましょう。
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <h4 class="font-bold text-gray-800 mb-3">復習：数の大切なポイント</h4>
+            <div class="space-y-2 text-gray-700">
+              <p>
+                <i class="fas fa-check text-green-500 mr-2"></i>
+                数は「<strong>量</strong>」を表す
+              </p>
+              <p>
+                <i class="fas fa-check text-green-500 mr-2"></i>
+                大きさを<strong>比べる</strong>ことができる
+              </p>
+              <p>
+                <i class="fas fa-check text-green-500 mr-2"></i>
+                10のまとまりで考えると<strong>わかりやすい</strong>
+              </p>
+              <p>
+                <i class="fas fa-check text-green-500 mr-2"></i>
+                数直線で<strong>順序と位置</strong>がわかる
+              </p>
+              <p>
+                <i class="fas fa-check text-green-500 mr-2"></i>
+                数は<strong>分けたり合わせたり</strong>できる
+              </p>
+            </div>
+          </div>
+          
+          <div class="bg-gradient-to-r from-blue-50 to-green-50 p-4 rounded-lg">
+            <p class="text-gray-700">
+              <i class="fas fa-star text-yellow-500 mr-2"></i>
+              <strong>数の感覚</strong>が身につくと、計算もわかりやすくなります！
+            </p>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: 'ザンビアの学校で、生徒が10人ずつ3つの教室にいます。全部で何人ですか？',
+      options: [
+        { id: 'A', text: '13人', correct: false, explanation: '10 + 3 = 13ではなく、10が3つという意味です。' },
+        { id: 'B', text: '30人', correct: true, explanation: '正解！10 × 3 = <strong>30人</strong>です。10のまとまりが3つで30になります。' },
+        { id: 'C', text: '100人', correct: false, explanation: '100は10のまとまりが10個の場合です。' }
+      ]
+    }
+  }
+];
+
+// グローバルに登録
+window.cardinalitySteps = cardinalitySteps;
+
+console.log('✅ 基数性モジュールを12ステップに拡張しました');

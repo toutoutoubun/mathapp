@@ -221,7 +221,7 @@ app.get('/', (c) => {
                             グラフの見方を一つずつ学びます
                         </p>
                         <div class="mt-4 text-sm text-blue-600 font-semibold">
-                            8つのステップ →
+                            15つのステップ →
                         </div>
                     </a>
 
@@ -233,7 +233,7 @@ app.get('/', (c) => {
                             数字が表す「量」を理解します
                         </p>
                         <div class="mt-4 text-sm text-green-600 font-semibold">
-                            5つのステップ →
+                            12つのステップ →
                         </div>
                     </a>
 
@@ -245,7 +245,7 @@ app.get('/', (c) => {
                             単位を揃えて比べる方法を学びます
                         </p>
                         <div class="mt-4 text-sm text-yellow-600 font-semibold">
-                            4つのステップ →
+                            10つのステップ →
                         </div>
                     </a>
 
@@ -257,7 +257,7 @@ app.get('/', (c) => {
                             「1あたり」で考える方法を学びます
                         </p>
                         <div class="mt-4 text-sm text-pink-600 font-semibold">
-                            2つのステップ →
+                            10つのステップ →
                         </div>
                     </a>
 
@@ -269,7 +269,19 @@ app.get('/', (c) => {
                             だいたいの数で考える方法を学びます
                         </p>
                         <div class="mt-4 text-sm text-purple-600 font-semibold">
-                            2つのステップ →
+                            8つのステップ →
+                        </div>
+                    </a>
+
+                    <!-- モジュール6: 公式集 -->
+                    <a href="/module/formulas" class="block p-6 bg-gradient-to-br from-yellow-100 to-orange-200 rounded-lg hover:shadow-xl transition transform hover:-translate-y-1">
+                        <div class="text-4xl mb-4">📐</div>
+                        <h4 class="text-xl font-bold text-gray-800 mb-2">公式集</h4>
+                        <p class="text-gray-600 text-sm">
+                            全モジュールで学んだ公式をまとめて復習
+                        </p>
+                        <div class="mt-4 text-sm text-orange-600 font-semibold">
+                            5つのステップ →
                         </div>
                     </a>
                 </div>
@@ -875,6 +887,73 @@ app.get('/cards', async (c) => {
                 </div>
             </div>
         </div>
+    </body>
+    </html>
+  `)
+})
+
+// モジュール6: 公式集
+app.get('/module/formulas', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>公式集 - 中学数学基礎概念支援アプリ</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <link href="/static/style.css" rel="stylesheet">
+    </head>
+    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
+        <nav class="bg-white shadow-md">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold text-orange-600">
+                        <i class="fas fa-graduation-cap mr-2"></i>数学の冒険
+                    </h1>
+                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
+                        <i class="fas fa-home mr-2"></i>ホームに戻る
+                    </a>
+                </div>
+            </div>
+        </nav>
+        <div class="max-w-5xl mx-auto px-4 py-8">
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+                <div class="flex items-center gap-4 mb-4">
+                    <div class="text-6xl">📐</div>
+                    <div>
+                        <h2 class="text-3xl font-bold text-gray-800">公式集</h2>
+                        <p class="text-gray-600 mt-2">全モジュールで学んだ公式をまとめて復習しましょう</p>
+                    </div>
+                </div>
+                <div class="step-nav mt-8" id="step-nav"></div>
+            </div>
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8" id="content-area"></div>
+            <div class="flex justify-between items-center">
+                <button id="prev-btn" onclick="window.goToPreviousStep()" class="px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-arrow-left mr-2"></i>前へ
+                </button>
+                <button id="next-btn" onclick="window.goToNextStep()" class="px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                    次へ<i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+            <div id="completion-banner" class="hidden fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-green-400 to-blue-500 text-white px-8 py-4 rounded-full shadow-2xl animate-bounce">
+                <i class="fas fa-trophy mr-2"></i>
+                公式集モジュールを完了しました！
+            </div>
+        </div>
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script src="/static/app.js"></script>
+        <script src="/static/module-formulas.js"></script>
+        <script src="/static/learn-engine.js"></script>
+        <script src="/static/module-page.js"></script>
+        <script>
+          // Initialize with formulas module
+          if (typeof initializeModulePage === 'function') {
+            initializeModulePage('formulas');
+          }
+        </script>
     </body>
     </html>
   `)

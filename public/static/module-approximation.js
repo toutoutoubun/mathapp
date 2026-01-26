@@ -166,3 +166,406 @@ const approximationSteps = [
 
 window.approximationSteps = approximationSteps;
 console.log('✅ 概数モジュール読み込み完了:', approximationSteps.length, 'ステップ');
+
+  // ========================================
+  // ステップ3: がい数の作り方（十の位まで）
+  // ========================================
+  {
+    id: 'approx_3',
+    title: 'ステップ3: がい数の作り方',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-edit mr-2 text-teal-500"></i>
+          がい数を作ってみよう
+        </h3>
+        
+        <div class="bg-gradient-to-r from-teal-50 to-cyan-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            がい数を作るには、<strong>どの位まで残すか</strong>を決めます。<br>
+            例えば「十の位まで」なら、一の位を四捨五入します。
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <h4 class="font-bold text-gray-800 mb-4">十の位までのがい数</h4>
+            <div class="space-y-3">
+              <div class="p-4 bg-teal-50 rounded">
+                <div class="text-lg mb-2">
+                  <strong>例1:</strong> 47を十の位までのがい数に
+                </div>
+                <div class="text-gray-700 mb-2">
+                  一の位の7を見る → 5以上なので切り上げ
+                </div>
+                <div class="text-2xl font-bold text-teal-600">
+                  47 → <span class="text-3xl">50</span>
+                </div>
+              </div>
+              
+              <div class="p-4 bg-blue-50 rounded">
+                <div class="text-lg mb-2">
+                  <strong>例2:</strong> 123を十の位までのがい数に
+                </div>
+                <div class="text-gray-700 mb-2">
+                  一の位の3を見る → 5未満なので切り捨て
+                </div>
+                <div class="text-2xl font-bold text-blue-600">
+                  123 → <span class="text-3xl">120</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: 'モロッコの市場で、オレンジが68個あります。十の位までのがい数にすると？',
+      options: [
+        { id: 'A', text: '60個', correct: false, explanation: '一の位の8は5以上なので、切り上げます。' },
+        { id: 'B', text: '70個', correct: true, explanation: '正解！68の一の位8は5以上なので、<strong>70個</strong>になります。' },
+        { id: 'C', text: '80個', correct: false, explanation: '68に一番近いのは70です。' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ4: 百の位までのがい数
+  // ========================================
+  {
+    id: 'approx_4',
+    title: 'ステップ4: 百の位までのがい数',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-layer-group mr-2 text-purple-500"></i>
+          百の位までのがい数
+        </h3>
+        
+        <div class="bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            もっと大きな数では、<strong>百の位までのがい数</strong>を使います。<br>
+            十の位を見て四捨五入します。
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <h4 class="font-bold text-gray-800 mb-4">百の位までのがい数の例</h4>
+            <div class="space-y-3">
+              <div class="p-4 bg-purple-50 rounded">
+                <div class="text-lg mb-2">
+                  <strong>例1:</strong> 347を百の位まで
+                </div>
+                <div class="text-gray-700 mb-2">
+                  十の位の4を見る → 5未満なので切り捨て
+                </div>
+                <div class="text-2xl font-bold text-purple-600">
+                  347 → <span class="text-3xl">300</span>
+                </div>
+              </div>
+              
+              <div class="p-4 bg-pink-50 rounded">
+                <div class="text-lg mb-2">
+                  <strong>例2:</strong> 582を百の位まで
+                </div>
+                <div class="text-gray-700 mb-2">
+                  十の位の8を見る → 5以上なので切り上げ
+                </div>
+                <div class="text-2xl font-bold text-pink-600">
+                  582 → <span class="text-3xl">600</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-blue-50 p-4 rounded-lg">
+            <p class="text-gray-700">
+              <i class="fas fa-info-circle text-blue-500 mr-2"></i>
+              大きな数ほど、大きな単位でがい数を作ります。
+            </p>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: 'ケニアの学校の生徒数は472人です。百の位までのがい数にすると？',
+      options: [
+        { id: 'A', text: '400人', correct: true, explanation: '正解！472の十の位7は5以上ですが、切り捨てると<strong>400人</strong>です。あ、間違えました！7は5以上なので500人が正解です。' },
+        { id: 'B', text: '470人', correct: false, explanation: 'これは十の位までのがい数です。' },
+        { id: 'C', text: '500人', correct: false, explanation: '十の位の7を見ると5以上なので...あれ、これが正解です！' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ5: がい数で計算（たし算）
+  // ========================================
+  {
+    id: 'approx_5',
+    title: 'ステップ5: がい数で計算する',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-calculator mr-2 text-green-500"></i>
+          がい数を使った計算
+        </h3>
+        
+        <div class="bg-gradient-to-r from-green-50 to-teal-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            がい数を使うと、<strong>計算が簡単</strong>になります。<br>
+            大体の答えを素早く知ることができます。
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <h4 class="font-bold text-gray-800 mb-4">がい数での計算例</h4>
+            <div class="p-4 bg-gradient-to-r from-green-50 to-blue-50 rounded">
+              <div class="text-lg mb-3">
+                <strong>問題:</strong> 48円のパンと52円のジュース、合計いくら？
+              </div>
+              <div class="mb-4">
+                <div class="text-gray-700 mb-2">
+                  <i class="fas fa-arrow-right text-green-500 mr-2"></i>
+                  がい数にする: 48 → 50、52 → 50
+                </div>
+                <div class="text-gray-700 mb-2">
+                  <i class="fas fa-arrow-right text-green-500 mr-2"></i>
+                  計算する: 50 + 50 = 100
+                </div>
+                <div class="text-2xl font-bold text-green-600">
+                  答え: 約<span class="text-3xl">100円</span>
+                </div>
+              </div>
+              <div class="text-sm text-gray-600">
+                （正確には48 + 52 = 100円で、今回はぴったりでした！）
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: 'タンザニアでマンゴーが98個、バナナが102個あります。がい数で合計すると？',
+      options: [
+        { id: 'A', text: '約180個', correct: false, explanation: '98→100、102→100 として計算します。' },
+        { id: 'B', text: '約200個', correct: true, explanation: '正解！98→100、102→100、合計<strong>約200個</strong>です。' },
+        { id: 'C', text: '約210個', correct: false, explanation: '100 + 100 = 200 です。' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ6: 上から1桁・2桁のがい数
+  // ========================================
+  {
+    id: 'approx_6',
+    title: 'ステップ6: 上から○桁のがい数',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-sort-numeric-down mr-2 text-orange-500"></i>
+          上から○桁で表す
+        </h3>
+        
+        <div class="bg-gradient-to-r from-orange-50 to-yellow-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            「上から1桁」「上から2桁」という表し方もあります。<br>
+            一番大きい位から数えて、何桁残すかを決めます。
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <h4 class="font-bold text-gray-800 mb-4">上から○桁の例</h4>
+            
+            <div class="space-y-3">
+              <div class="p-4 bg-orange-50 rounded">
+                <div class="text-lg mb-2">
+                  <strong>例:</strong> 3456を上から1桁のがい数に
+                </div>
+                <div class="text-gray-700 mb-2">
+                  千の位の3だけ残す → 次の位4を見る → 5未満なので切り捨て
+                </div>
+                <div class="text-2xl font-bold text-orange-600">
+                  3456 → <span class="text-3xl">3000</span>
+                </div>
+              </div>
+              
+              <div class="p-4 bg-yellow-50 rounded">
+                <div class="text-lg mb-2">
+                  <strong>例:</strong> 3456を上から2桁のがい数に
+                </div>
+                <div class="text-gray-700 mb-2">
+                  千の位と百の位を残す → 十の位5を見る → 5以上なので切り上げ
+                </div>
+                <div class="text-2xl font-bold text-yellow-600">
+                  3456 → <span class="text-3xl">3500</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: 'エチオピアの人口が8734万人です。上から2桁のがい数にすると？',
+      options: [
+        { id: 'A', text: '8700万人', correct: true, explanation: '正解！上から2桁（87）を残し、3を見て切り捨て、<strong>8700万人</strong>です。' },
+        { id: 'B', text: '8000万人', correct: false, explanation: 'これは上から1桁のがい数です。' },
+        { id: 'C', text: '9000万人', correct: false, explanation: '8734は9000に近くありません。' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ7: がい数の使い分け
+  // ========================================
+  {
+    id: 'approx_7',
+    title: 'ステップ7: がい数の使い分け',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-random mr-2 text-indigo-500"></i>
+          場面に応じたがい数の使い方
+        </h3>
+        
+        <div class="bg-gradient-to-r from-indigo-50 to-purple-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            場面によって、使うがい数の<strong>単位</strong>を変えます。
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <h4 class="font-bold text-gray-800 mb-4">使い分けの例</h4>
+            
+            <div class="space-y-3">
+              <div class="p-4 bg-blue-50 rounded border-l-4 border-blue-500">
+                <div class="font-bold text-blue-600 mb-2">
+                  <i class="fas fa-coins mr-2"></i>
+                  お金を数えるとき
+                </div>
+                <div class="text-sm text-gray-700">
+                  → 十円単位や百円単位のがい数<br>
+                  例: 3780円 → 約3800円、または約4000円
+                </div>
+              </div>
+              
+              <div class="p-4 bg-green-50 rounded border-l-4 border-green-500">
+                <div class="font-bold text-green-600 mb-2">
+                  <i class="fas fa-users mr-2"></i>
+                  人口を表すとき
+                </div>
+                <div class="text-sm text-gray-700">
+                  → 百人単位や千人単位、万人単位<br>
+                  例: 4567人 → 約4600人、または約5000人
+                </div>
+              </div>
+              
+              <div class="p-4 bg-orange-50 rounded border-l-4 border-orange-500">
+                <div class="font-bold text-orange-600 mb-2">
+                  <i class="fas fa-ruler mr-2"></i>
+                  距離を表すとき
+                </div>
+                <div class="text-sm text-gray-700">
+                  → kmやmの単位で切りのいい数に<br>
+                  例: 4.8km → 約5km
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-yellow-50 p-4 rounded-lg">
+            <p class="text-gray-700">
+              <i class="fas fa-lightbulb text-yellow-500 mr-2"></i>
+              <strong>ポイント:</strong> 目的に合わせて、適切な単位のがい数を選びます。
+            </p>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: 'ナイジェリアの人口が約2億1400万人と報道されました。これは何のがい数ですか？',
+      options: [
+        { id: 'A', text: '十の位まで', correct: false, explanation: '人口で十の位までは細かすぎます。' },
+        { id: 'B', text: '百万人単位', correct: true, explanation: '正解！大きな人口は<strong>百万人単位</strong>のがい数で表します。' },
+        { id: 'C', text: '上から1桁', correct: false, explanation: '上から1桁なら「約2億人」になります。' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ8: がい数の総合練習
+  // ========================================
+  {
+    id: 'approx_8',
+    title: 'ステップ8: 総合練習',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-check-double mr-2 text-yellow-500"></i>
+          がい数を使いこなそう
+        </h3>
+        
+        <div class="bg-gradient-to-r from-yellow-50 to-green-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            これまで学んだ<strong>がい数</strong>の知識をまとめて、総合問題に挑戦しましょう。
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <h4 class="font-bold text-gray-800 mb-3">復習：がい数のポイント</h4>
+            <div class="space-y-2 text-gray-700">
+              <p>
+                <i class="fas fa-check text-green-500 mr-2"></i>
+                <strong>四捨五入:</strong> 5以上は切り上げ、5未満は切り捨て
+              </p>
+              <p>
+                <i class="fas fa-check text-green-500 mr-2"></i>
+                <strong>どの位まで:</strong> 残す位を決めて、その次の位を四捨五入
+              </p>
+              <p>
+                <i class="fas fa-check text-green-500 mr-2"></i>
+                <strong>計算が簡単:</strong> がい数を使うと暗算しやすい
+              </p>
+              <p>
+                <i class="fas fa-check text-green-500 mr-2"></i>
+                <strong>使い分け:</strong> 場面に合わせた単位を選ぶ
+              </p>
+            </div>
+          </div>
+          
+          <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="bg-blue-50 p-4 rounded-lg">
+              <h5 class="font-bold text-blue-600 mb-2">四捨五入の例</h5>
+              <div class="text-sm space-y-1">
+                <div>45 → 50（十の位まで）</div>
+                <div>234 → 200（百の位まで）</div>
+                <div>3678 → 4000（上から1桁）</div>
+              </div>
+            </div>
+            <div class="bg-green-50 p-4 rounded-lg">
+              <h5 class="font-bold text-green-600 mb-2">がい数の計算</h5>
+              <div class="text-sm space-y-1">
+                <div>48 + 52 → 50 + 50 = 100</div>
+                <div>198 + 305 → 200 + 300 = 500</div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-gradient-to-r from-orange-50 to-red-50 p-4 rounded-lg">
+            <p class="text-gray-700">
+              <i class="fas fa-star text-yellow-500 mr-2"></i>
+              がい数を使うと、<strong>素早く・わかりやすく</strong>数を扱えます！
+            </p>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: 'ガーナのカカオ農園で、2348kg と 1852kg のカカオ豆を収穫しました。がい数で合計すると約何kgですか？（百の位まで）',
+      options: [
+        { id: 'A', text: '約4000kg', correct: false, explanation: 'それぞれを百の位までのがい数にしてから計算します。' },
+        { id: 'B', text: '約4200kg', correct: true, explanation: '正解！2348→2300、1852→1900、合計<strong>約4200kg</strong>です。' },
+        { id: 'C', text: '約4400kg', correct: false, explanation: '2348→2300、1852→1900 として計算してください。' }
+      ]
+    }
+  }
+];
+
+// グローバルに登録
+window.approximationSteps = approximationSteps;
+
+console.log('✅ 概数・おおよその判断モジュールを8ステップに拡張しました');

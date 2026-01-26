@@ -407,3 +407,463 @@ const unitsSteps = [
 // ステップをグローバルに登録
 window.unitsSteps = unitsSteps;
 console.log('✅ 単位と量モジュール読み込み完了:', unitsSteps.length, 'ステップ');
+
+  // ========================================
+  // ステップ5: いろいろな単位（長さ・重さ・時間）
+  // ========================================
+  {
+    id: 'units_5',
+    title: 'ステップ5: いろいろな単位',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-ruler-combined mr-2 text-purple-500"></i>
+          測るものによって単位が変わる
+        </h3>
+        
+        <div class="bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            測るものによって、使う<strong>単位</strong>が違います。<br>
+            代表的な単位を見てみましょう。
+          </p>
+          
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <!-- 長さ -->
+            <div class="bg-white p-4 rounded-lg shadow-sm">
+              <h4 class="font-bold text-blue-600 mb-3">
+                <i class="fas fa-ruler mr-2"></i>
+                長さ
+              </h4>
+              <div class="space-y-2 text-sm">
+                <div class="flex justify-between">
+                  <span>1 km</span>
+                  <span class="text-gray-600">= 1000 m</span>
+                </div>
+                <div class="flex justify-between">
+                  <span>1 m</span>
+                  <span class="text-gray-600">= 100 cm</span>
+                </div>
+                <div class="flex justify-between">
+                  <span>1 cm</span>
+                  <span class="text-gray-600">= 10 mm</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 重さ -->
+            <div class="bg-white p-4 rounded-lg shadow-sm">
+              <h4 class="font-bold text-green-600 mb-3">
+                <i class="fas fa-weight mr-2"></i>
+                重さ
+              </h4>
+              <div class="space-y-2 text-sm">
+                <div class="flex justify-between">
+                  <span>1 t</span>
+                  <span class="text-gray-600">= 1000 kg</span>
+                </div>
+                <div class="flex justify-between">
+                  <span>1 kg</span>
+                  <span class="text-gray-600">= 1000 g</span>
+                </div>
+                <div class="flex justify-between">
+                  <span>1 g</span>
+                  <span class="text-gray-600">= 1000 mg</span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 時間 -->
+            <div class="bg-white p-4 rounded-lg shadow-sm">
+              <h4 class="font-bold text-orange-600 mb-3">
+                <i class="fas fa-clock mr-2"></i>
+                時間
+              </h4>
+              <div class="space-y-2 text-sm">
+                <div class="flex justify-between">
+                  <span>1時間</span>
+                  <span class="text-gray-600">= 60分</span>
+                </div>
+                <div class="flex justify-between">
+                  <span>1分</span>
+                  <span class="text-gray-600">= 60秒</span>
+                </div>
+                <div class="flex justify-between">
+                  <span>1日</span>
+                  <span class="text-gray-600">= 24時間</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: '1メートルは何センチメートルですか？',
+      options: [
+        { id: 'A', text: '10 cm', correct: false, explanation: '10 cmは1メートルより小さいです。' },
+        { id: 'B', text: '100 cm', correct: true, explanation: '正解！1 m = <strong>100 cm</strong>です。' },
+        { id: 'C', text: '1000 cm', correct: false, explanation: '1000 cmは10メートルです。' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ6: 単位の接頭語（キロ、ミリなど）
+  // ========================================
+  {
+    id: 'units_6',
+    title: 'ステップ6: 単位の接頭語',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-text-height mr-2 text-indigo-500"></i>
+          キロ、ミリって何？
+        </h3>
+        
+        <div class="bg-gradient-to-r from-indigo-50 to-blue-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            「キロ」や「ミリ」は、単位の前につけて<strong>大きさを変える</strong>言葉です。<br>
+            これを<strong>接頭語</strong>と言います。
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <h4 class="font-bold text-gray-800 mb-4">よく使う接頭語</h4>
+            <div class="space-y-3">
+              <div class="flex items-center gap-4 p-3 bg-red-50 rounded">
+                <div class="text-3xl">📏</div>
+                <div>
+                  <div class="font-bold text-red-600">キロ (k)</div>
+                  <div class="text-sm text-gray-600">1000倍の大きさ</div>
+                  <div class="text-sm">例: 1 km = 1000 m</div>
+                </div>
+              </div>
+              
+              <div class="flex items-center gap-4 p-3 bg-yellow-50 rounded">
+                <div class="text-3xl">📐</div>
+                <div>
+                  <div class="font-bold text-yellow-600">センチ (c)</div>
+                  <div class="text-sm text-gray-600">100分の1の大きさ</div>
+                  <div class="text-sm">例: 1 cm = 0.01 m</div>
+                </div>
+              </div>
+              
+              <div class="flex items-center gap-4 p-3 bg-green-50 rounded">
+                <div class="text-3xl">🔬</div>
+                <div>
+                  <div class="font-bold text-green-600">ミリ (m)</div>
+                  <div class="text-sm text-gray-600">1000分の1の大きさ</div>
+                  <div class="text-sm">例: 1 mm = 0.001 m</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-blue-50 p-4 rounded-lg">
+            <p class="text-gray-700">
+              <i class="fas fa-lightbulb text-yellow-500 mr-2"></i>
+              接頭語を覚えると、いろいろな単位がわかりやすくなります！
+            </p>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: '「キロ」は何倍を表しますか？',
+      options: [
+        { id: 'A', text: '10倍', correct: false, explanation: '10倍は「デカ」です。' },
+        { id: 'B', text: '100倍', correct: false, explanation: '100倍は「ヘクト」です。' },
+        { id: 'C', text: '1000倍', correct: true, explanation: '正解！「キロ」は<strong>1000倍</strong>を表します。' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ7: 単位換算の練習（長さ）
+  // ========================================
+  {
+    id: 'units_7',
+    title: 'ステップ7: 長さの単位換算',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-exchange-alt mr-2 text-teal-500"></i>
+          長さの単位を変えてみよう
+        </h3>
+        
+        <div class="bg-gradient-to-r from-teal-50 to-cyan-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            長さの単位を<strong>変換</strong>する練習をしましょう。<br>
+            大きい単位から小さい単位に変えるときは<strong>かけ算</strong>します。
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <h4 class="font-bold text-gray-800 mb-4">換算の例</h4>
+            
+            <div class="space-y-4">
+              <!-- 例1 -->
+              <div class="p-4 bg-teal-50 rounded">
+                <div class="text-lg mb-2">
+                  <strong>例1:</strong> 3 m を cm に変換
+                </div>
+                <div class="text-gray-700 mb-2">
+                  1 m = 100 cm なので...
+                </div>
+                <div class="text-xl font-bold text-teal-600">
+                  3 m = 3 × 100 = <span class="text-2xl">300 cm</span>
+                </div>
+              </div>
+              
+              <!-- 例2 -->
+              <div class="p-4 bg-blue-50 rounded">
+                <div class="text-lg mb-2">
+                  <strong>例2:</strong> 2.5 km を m に変換
+                </div>
+                <div class="text-gray-700 mb-2">
+                  1 km = 1000 m なので...
+                </div>
+                <div class="text-xl font-bold text-blue-600">
+                  2.5 km = 2.5 × 1000 = <span class="text-2xl">2500 m</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-yellow-50 p-4 rounded-lg">
+            <p class="text-gray-700">
+              <i class="fas fa-star text-yellow-500 mr-2"></i>
+              <strong>コツ:</strong> 大きい単位→小さい単位は<strong>数が大きく</strong>なります
+            </p>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: 'ナイルケニアでナイル川の長さを測りました。6 km は何 m ですか？',
+      options: [
+        { id: 'A', text: '60 m', correct: false, explanation: '1 km = 1000 m です。もう一度計算してみましょう。' },
+        { id: 'B', text: '600 m', correct: false, explanation: '6 × 1000 を計算してください。' },
+        { id: 'C', text: '6000 m', correct: true, explanation: '正解！6 km = 6 × 1000 = <strong>6000 m</strong>です。' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ8: 単位換算の練習（重さ）
+  // ========================================
+  {
+    id: 'units_8',
+    title: 'ステップ8: 重さの単位換算',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-balance-scale mr-2 text-pink-500"></i>
+          重さの単位を変えてみよう
+        </h3>
+        
+        <div class="bg-gradient-to-r from-pink-50 to-red-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            重さの単位も、長さと同じように<strong>変換</strong>できます。
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <h4 class="font-bold text-gray-800 mb-4">重さの換算</h4>
+            
+            <div class="space-y-4">
+              <!-- kg → g -->
+              <div class="p-4 bg-pink-50 rounded">
+                <div class="text-lg mb-2">
+                  <strong>kg を g に</strong>
+                </div>
+                <div class="text-gray-700 mb-2">
+                  1 kg = 1000 g
+                </div>
+                <div class="text-xl font-bold text-pink-600">
+                  4 kg = 4 × 1000 = <span class="text-2xl">4000 g</span>
+                </div>
+              </div>
+              
+              <!-- t → kg -->
+              <div class="p-4 bg-orange-50 rounded">
+                <div class="text-lg mb-2">
+                  <strong>t を kg に</strong>
+                </div>
+                <div class="text-gray-700 mb-2">
+                  1 t (トン) = 1000 kg
+                </div>
+                <div class="text-xl font-bold text-orange-600">
+                  2 t = 2 × 1000 = <span class="text-2xl">2000 kg</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-green-50 p-4 rounded-lg">
+            <p class="text-gray-700">
+              <i class="fas fa-globe-africa text-green-600 mr-2"></i>
+              <strong>例:</strong> ガーナのカカオ豆1袋が2.5 kgなら、2500 gです。
+            </p>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: 'エジプトの市場でスイカを買いました。3 kg は何 g ですか？',
+      options: [
+        { id: 'A', text: '30 g', correct: false, explanation: '1 kg = 1000 g です。' },
+        { id: 'B', text: '300 g', correct: false, explanation: '3 × 1000 を計算してください。' },
+        { id: 'C', text: '3000 g', correct: true, explanation: '正解！3 kg = 3 × 1000 = <strong>3000 g</strong>です。' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ9: 逆変換（小→大）
+  // ========================================
+  {
+    id: 'units_9',
+    title: 'ステップ9: 小さい単位から大きい単位へ',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-compress-arrows-alt mr-2 text-purple-500"></i>
+          小さい単位を大きい単位にする
+        </h3>
+        
+        <div class="bg-gradient-to-r from-purple-50 to-indigo-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            今度は<strong>逆</strong>に変換してみましょう。<br>
+            小さい単位から大きい単位に変えるときは<strong>わり算</strong>します。
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <h4 class="font-bold text-gray-800 mb-4">逆変換の例</h4>
+            
+            <div class="space-y-4">
+              <!-- cm → m -->
+              <div class="p-4 bg-purple-50 rounded">
+                <div class="text-lg mb-2">
+                  <strong>例1:</strong> 500 cm を m に変換
+                </div>
+                <div class="text-gray-700 mb-2">
+                  100 cm = 1 m なので、100でわる
+                </div>
+                <div class="text-xl font-bold text-purple-600">
+                  500 cm ÷ 100 = <span class="text-2xl">5 m</span>
+                </div>
+              </div>
+              
+              <!-- g → kg -->
+              <div class="p-4 bg-indigo-50 rounded">
+                <div class="text-lg mb-2">
+                  <strong>例2:</strong> 4000 g を kg に変換
+                </div>
+                <div class="text-gray-700 mb-2">
+                  1000 g = 1 kg なので、1000でわる
+                </div>
+                <div class="text-xl font-bold text-indigo-600">
+                  4000 g ÷ 1000 = <span class="text-2xl">4 kg</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-yellow-50 p-4 rounded-lg">
+            <p class="text-gray-700">
+              <i class="fas fa-info-circle text-blue-500 mr-2"></i>
+              小さい単位→大きい単位は<strong>数が小さく</strong>なります
+            </p>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: 'マダガスカルで測った距離が2000 mでした。何 km ですか？',
+      options: [
+        { id: 'A', text: '20 km', correct: false, explanation: '2000 ÷ 1000 を計算してください。' },
+        { id: 'B', text: '2 km', correct: true, explanation: '正解！2000 m ÷ 1000 = <strong>2 km</strong>です。' },
+        { id: 'C', text: '0.2 km', correct: false, explanation: '2000 ÷ 1000 = 2 です。' }
+      ]
+    }
+  },
+
+  // ========================================
+  // ステップ10: 単位と量の総合練習
+  // ========================================
+  {
+    id: 'units_10',
+    title: 'ステップ10: 総合練習',
+    content: `
+      <div class="mb-6">
+        <h3 class="text-2xl font-bold text-gray-800 mb-4">
+          <i class="fas fa-award mr-2 text-yellow-500"></i>
+          単位換算をマスターしよう
+        </h3>
+        
+        <div class="bg-gradient-to-r from-yellow-50 to-green-50 p-6 rounded-lg mb-6">
+          <p class="text-lg mb-4">
+            これまで学んだ<strong>単位換算</strong>を使って、総合問題に挑戦しましょう。
+          </p>
+          
+          <div class="bg-white p-6 rounded-lg shadow-sm mb-4">
+            <h4 class="font-bold text-gray-800 mb-3">復習：単位換算のポイント</h4>
+            <div class="space-y-2 text-gray-700">
+              <p>
+                <i class="fas fa-check text-green-500 mr-2"></i>
+                単位が違うと<strong>比べられない</strong>
+              </p>
+              <p>
+                <i class="fas fa-check text-green-500 mr-2"></i>
+                大→小は<strong>かけ算</strong>（数が大きくなる）
+              </p>
+              <p>
+                <i class="fas fa-check text-green-500 mr-2"></i>
+                小→大は<strong>わり算</strong>（数が小さくなる）
+              </p>
+              <p>
+                <i class="fas fa-check text-green-500 mr-2"></i>
+                接頭語を覚えると<strong>便利</strong>
+              </p>
+            </div>
+          </div>
+          
+          <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="bg-blue-50 p-4 rounded-lg">
+              <h5 class="font-bold text-blue-600 mb-2">大→小</h5>
+              <div class="text-sm space-y-1">
+                <div>5 km = 5000 m</div>
+                <div>3 kg = 3000 g</div>
+              </div>
+            </div>
+            <div class="bg-green-50 p-4 rounded-lg">
+              <h5 class="font-bold text-green-600 mb-2">小→大</h5>
+              <div class="text-sm space-y-1">
+                <div>800 cm = 8 m</div>
+                <div>6000 g = 6 kg</div>
+              </div>
+            </div>
+          </div>
+          
+          <div class="bg-gradient-to-r from-orange-50 to-red-50 p-4 rounded-lg">
+            <p class="text-gray-700">
+              <i class="fas fa-trophy text-yellow-500 mr-2"></i>
+              単位をそろえれば、どんな問題も解けます！
+            </p>
+          </div>
+        </div>
+      </div>
+    `,
+    quiz: {
+      question: 'セネガルの学校まで1.2 km、市場まで800 m。どちらが遠いですか？',
+      options: [
+        { id: 'A', text: '市場', correct: false, explanation: '1.2 km = 1200 m なので、学校の方が遠いです。' },
+        { id: 'B', text: '学校', correct: true, explanation: '正解！1.2 km = 1200 m なので、<strong>学校</strong>の方が遠いです（1200 m > 800 m）。' },
+        { id: 'C', text: '同じ', correct: false, explanation: '単位をそろえて比べてみましょう。' }
+      ]
+    }
+  }
+];
+
+// グローバルに登録
+window.unitsSteps = unitsSteps;
+
+console.log('✅ 単位と量モジュールを10ステップに拡張しました');
