@@ -287,6 +287,31 @@ app.get('/', (c) => {
                 </div>
             </div>
 
+            <!-- 中学1年生の内容 -->
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+                <h3 class="text-2xl font-bold text-gray-800 mb-6">
+                    <i class="fas fa-graduation-cap mr-2 text-indigo-600"></i>
+                    中学1年生の内容
+                </h3>
+                <p class="text-gray-600 mb-6">
+                    基礎が身についたら、中学1年生の内容に進みましょう。
+                </p>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- モジュール7: 正の数・負の数 -->
+                    <a href="/module/integers" class="block p-6 bg-gradient-to-br from-indigo-100 to-blue-200 rounded-lg hover:shadow-xl transition transform hover:-translate-y-1">
+                        <div class="text-4xl mb-4">➕➖</div>
+                        <h4 class="text-xl font-bold text-gray-800 mb-2">正の数・負の数</h4>
+                        <p class="text-gray-600 text-sm">
+                            マイナスの数を学びます
+                        </p>
+                        <div class="mt-4 text-sm text-indigo-600 font-semibold">
+                            5つのステップ →
+                        </div>
+                    </a>
+                </div>
+            </div>
+
             <!-- 進捗状況 -->
             <div class="bg-white rounded-xl shadow-lg p-8">
                 <h3 class="text-2xl font-bold text-gray-800 mb-6">
@@ -952,6 +977,73 @@ app.get('/module/formulas', (c) => {
           // Initialize with formulas module
           if (typeof initializeModulePage === 'function') {
             initializeModulePage('formulas');
+          }
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// モジュール7: 正の数・負の数
+app.get('/module/integers', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>正の数・負の数 - 中学数学基礎概念支援アプリ</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <link href="/static/style.css" rel="stylesheet">
+    </head>
+    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
+        <nav class="bg-white shadow-md">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold text-indigo-600">
+                        <i class="fas fa-graduation-cap mr-2"></i>数学の冒険
+                    </h1>
+                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
+                        <i class="fas fa-home mr-2"></i>ホームに戻る
+                    </a>
+                </div>
+            </div>
+        </nav>
+        <div class="max-w-5xl mx-auto px-4 py-8">
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+                <div class="flex items-center gap-4 mb-4">
+                    <div class="text-6xl">➕➖</div>
+                    <div>
+                        <h2 class="text-3xl font-bold text-gray-800">正の数・負の数</h2>
+                        <p class="text-gray-600 mt-2">0より大きい数と小さい数を理解しましょう</p>
+                    </div>
+                </div>
+                <div class="step-nav mt-8" id="step-nav"></div>
+            </div>
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8" id="content-area"></div>
+            <div class="flex justify-between items-center">
+                <button id="prev-btn" onclick="window.goToPreviousStep()" class="px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                    <i class="fas fa-arrow-left mr-2"></i>前へ
+                </button>
+                <button id="next-btn" onclick="window.goToNextStep()" class="px-6 py-3 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition disabled:opacity-50 disabled:cursor-not-allowed">
+                    次へ<i class="fas fa-arrow-right ml-2"></i>
+                </button>
+            </div>
+            <div id="completion-banner" class="hidden fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-green-400 to-blue-500 text-white px-8 py-4 rounded-full shadow-2xl animate-bounce">
+                <i class="fas fa-trophy mr-2"></i>
+                正の数・負の数モジュールを完了しました！
+            </div>
+        </div>
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script src="/static/app.js"></script>
+        <script src="/static/module-integers.js"></script>
+        <script src="/static/learn-engine.js"></script>
+        <script src="/static/module-page.js"></script>
+        <script>
+          // Initialize with integers module
+          if (typeof initializeModulePage === 'function') {
+            initializeModulePage('integers');
           }
         </script>
     </body>
