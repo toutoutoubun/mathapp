@@ -11,14 +11,17 @@ window.graphLearning = {
 function initGraphLearning() {
   console.log('=== グラフ学習ページ初期化開始 ===');
   console.log('graphSteps:', typeof window.graphSteps !== 'undefined' ? 'OK' : 'NG');
+  console.log('graphSteps配列:', window.graphSteps);
+  console.log('graphSteps長さ:', window.graphSteps ? window.graphSteps.length : 'undefined');
   
-  if (typeof window.graphSteps === 'undefined') {
-    console.error('❌ graphStepsが定義されていません');
+  if (typeof window.graphSteps === 'undefined' || !window.graphSteps || window.graphSteps.length === 0) {
+    console.error('❌ graphStepsが定義されていないか空です');
     alert('エラー: 学習データが読み込まれていません。ページを再読み込みしてください。');
     return;
   }
   
   console.log('利用可能なステップ数:', window.graphSteps.length);
+  console.log('最初のステップ:', window.graphSteps[0]);
   
   renderStepNavigation();
   renderStep(window.graphLearning.currentStepIndex);
@@ -58,13 +61,24 @@ function renderStepNavigation() {
 // ステップ描画
 function renderStep(index) {
   console.log('--- ステップ描画開始:', index, '---');
+  console.log('window.graphSteps:', window.graphSteps);
+  console.log('window.graphSteps[' + index + ']:', window.graphSteps ? window.graphSteps[index] : 'graphSteps is undefined');
+  
   const contentArea = document.getElementById('content-area');
-  if (!contentArea || !window.graphSteps[index]) {
-    console.error('❌ content-areaまたはステップが見つかりません');
+  console.log('content-area要素:', contentArea ? 'OK' : 'NG');
+  
+  if (!contentArea) {
+    console.error('❌ content-areaが見つかりません');
+    return;
+  }
+  
+  if (!window.graphSteps || !window.graphSteps[index]) {
+    console.error('❌ ステップが見つかりません - index:', index, 'graphSteps:', window.graphSteps);
     return;
   }
 
   const step = window.graphSteps[index];
+  console.log('ステップデータ取得成功:', step.title);
   window.graphLearning.quizAnswered = false;
 
   contentArea.innerHTML = `
