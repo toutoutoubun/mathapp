@@ -1225,4 +1225,332 @@ app.get('/module/integers', (c) => {
   `)
 })
 
+// ==================== 管理画面 API Routes ====================
+
+// フェーズ一覧取得
+app.get('/api/admin/phases', async (c) => {
+  const { DB } = c.env
+  const result = await DB.prepare('SELECT * FROM phases ORDER BY order_index').all()
+  return c.json({ phases: result.results })
+})
+
+// フェーズ作成
+app.post('/api/admin/phases', async (c) => {
+  const { DB } = c.env
+  const { name, description, order_index } = await c.req.json()
+  
+  const result = await DB.prepare(
+    'INSERT INTO phases (name, description, order_index) VALUES (?, ?, ?)'
+  ).bind(name, description || null, order_index || 0).run()
+  
+  return c.json({ success: true, id: result.meta.last_row_id })
+})
+
+// モジュール一覧取得
+app.get('/api/admin/modules', async (c) => {
+  const { DB } = c.env
+  const phase_id = c.req.query('phase_id')
+  
+  let query = 'SELECT * FROM modules'
+  if (phase_id) {
+    query += ' WHERE phase_id = ?'
+    const result = await DB.prepare(query + ' ORDER BY order_index').bind(phase_id).all()
+    return c.json({ modules: result.results })
+  }
+  
+  const result = await DB.prepare(query + ' ORDER BY order_index').all()
+  return c.json({ modules: result.results })
+})
+
+// モジュール作成
+app.post('/api/admin/modules', async (c) => {
+  const { DB } = c.env
+  const { phase_id, name, description, icon, color, order_index } = await c.req.json()
+  
+  const result = await DB.prepare(
+    'INSERT INTO modules (phase_id, name, description, icon, color, order_index) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(phase_id, name, description || null, icon || null, color || null, order_index || 0).run()
+  
+  return c.json({ success: true, id: result.meta.last_row_id })
+})
+
+// ステップ一覧取得
+app.get('/api/admin/steps', async (c) => {
+  const { DB } = c.env
+  const module_id = c.req.query('module_id')
+  
+  if (!module_id) {
+    return c.json({ error: 'module_id is required' }, 400)
+  }
+  
+  const result = await DB.prepare(
+    'SELECT * FROM steps WHERE module_id = ? ORDER BY order_index'
+  ).bind(module_id).all()
+  
+  return c.json({ steps: result.results })
+})
+
+// ステップ作成
+app.post('/api/admin/steps', async (c) => {
+  const { DB } = c.env
+  const { module_id, title, description, order_index } = await c.req.json()
+  
+  const result = await DB.prepare(
+    'INSERT INTO steps (module_id, title, description, order_index) VALUES (?, ?, ?, ?)'
+  ).bind(module_id, title, description || null, order_index || 0).run()
+  
+  return c.json({ success: true, id: result.meta.last_row_id })
+})
+
+// コンテンツブロック作成
+app.post('/api/admin/content-blocks', async (c) => {
+  const { DB } = c.env
+  const { step_id, block_type, content, order_index } = await c.req.json()
+  
+  const result = await DB.prepare(
+    'INSERT INTO content_blocks (step_id, block_type, content, order_index) VALUES (?, ?, ?, ?)'
+  ).bind(step_id, block_type, JSON.stringify(content), order_index || 0).run()
+  
+  return c.json({ success: true, id: result.meta.last_row_id })
+})
+
+// 問題作成
+app.post('/api/admin/questions', async (c) => {
+  const { DB } = c.env
+  const { step_id, question_type, question_text, config, order_index } = await c.req.json()
+  
+  const result = await DB.prepare(
+    'INSERT INTO questions (step_id, question_type, question_text, config, order_index) VALUES (?, ?, ?, ?, ?)'
+  ).bind(step_id, question_type, question_text, JSON.stringify(config || {}), order_index || 0).run()
+  
+  return c.json({ success: true, id: result.meta.last_row_id })
+})
+
+// ==================== 管理画面 UI Routes ====================
+
+// 管理画面トップページ
+app.get('/admin', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>学習アプリ開発プラットフォーム - 管理画面</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-gray-50 min-h-screen">
+        <nav class="bg-indigo-600 text-white shadow-lg">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold">
+                        <i class="fas fa-cogs mr-2"></i>
+                        学習アプリ開発プラットフォーム
+                    </h1>
+                    <a href="/" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
+                        <i class="fas fa-home mr-2"></i>生徒画面へ
+                    </a>
+                </div>
+            </div>
+        </nav>
+
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <!-- フェーズ管理 -->
+                <a href="/admin/phases" class="block p-6 bg-white rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-1">
+                    <div class="text-5xl mb-4 text-blue-500">
+                        <i class="fas fa-layer-group"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">フェーズ管理</h3>
+                    <p class="text-gray-600">学習の大きな区分を作成・編集</p>
+                </a>
+
+                <!-- モジュール管理 -->
+                <a href="/admin/modules" class="block p-6 bg-white rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-1">
+                    <div class="text-5xl mb-4 text-green-500">
+                        <i class="fas fa-book"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">モジュール管理</h3>
+                    <p class="text-gray-600">学習単元を作成・編集</p>
+                </a>
+
+                <!-- ステップ・コンテンツ管理 -->
+                <a href="/admin/steps" class="block p-6 bg-white rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-1">
+                    <div class="text-5xl mb-4 text-purple-500">
+                        <i class="fas fa-tasks"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">ステップ・コンテンツ管理</h3>
+                    <p class="text-gray-600">学習ステップと説明文を作成・編集</p>
+                </a>
+
+                <!-- インタラクティブ要素管理 -->
+                <a href="/admin/interactive" class="block p-6 bg-white rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-1">
+                    <div class="text-5xl mb-4 text-orange-500">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">インタラクティブ要素</h3>
+                    <p class="text-gray-600">図形、グラフ、表などの作成・編集</p>
+                </a>
+
+                <!-- 問題管理 -->
+                <a href="/admin/questions" class="block p-6 bg-white rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-1">
+                    <div class="text-5xl mb-4 text-red-500">
+                        <i class="fas fa-question-circle"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">問題管理</h3>
+                    <p class="text-gray-600">問題と解答を作成・編集</p>
+                </a>
+
+                <!-- プレビュー -->
+                <a href="/admin/preview" class="block p-6 bg-white rounded-xl shadow-lg hover:shadow-xl transition transform hover:-translate-y-1">
+                    <div class="text-5xl mb-4 text-pink-500">
+                        <i class="fas fa-eye"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">プレビュー</h3>
+                    <p class="text-gray-600">作成したコンテンツを確認</p>
+                </a>
+            </div>
+        </div>
+    </body>
+    </html>
+  `)
+})
+
+// フェーズ管理画面
+app.get('/admin/phases', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>フェーズ管理 - 学習アプリ開発プラットフォーム</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-gray-50 min-h-screen">
+        <nav class="bg-indigo-600 text-white shadow-lg">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold">
+                        <i class="fas fa-layer-group mr-2"></i>
+                        フェーズ管理
+                    </h1>
+                    <a href="/admin" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
+                        <i class="fas fa-arrow-left mr-2"></i>管理画面へ戻る
+                    </a>
+                </div>
+            </div>
+        </nav>
+
+        <div class="max-w-5xl mx-auto px-4 py-8">
+            <!-- 新規作成フォーム -->
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-plus-circle mr-2 text-blue-500"></i>
+                    新しいフェーズを作成
+                </h2>
+                <form id="create-phase-form" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">フェーズ名</label>
+                        <input type="text" name="name" required 
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               placeholder="例：基礎概念の理解">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">説明</label>
+                        <textarea name="description" rows="3" 
+                                  class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                  placeholder="このフェーズの目的や内容を説明"></textarea>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">表示順序</label>
+                        <input type="number" name="order_index" value="0" min="0"
+                               class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                    </div>
+                    <button type="submit" class="w-full px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                        <i class="fas fa-plus mr-2"></i>フェーズを作成
+                    </button>
+                </form>
+            </div>
+
+            <!-- フェーズ一覧 -->
+            <div class="bg-white rounded-xl shadow-lg p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-list mr-2 text-green-500"></i>
+                    登録されているフェーズ
+                </h2>
+                <div id="phases-list" class="space-y-4">
+                    <p class="text-gray-500 text-center py-8">読み込み中...</p>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script>
+          // フェーズ一覧を読み込み
+          async function loadPhases() {
+            try {
+              const response = await axios.get('/api/admin/phases');
+              const phases = response.data.phases;
+              
+              const listEl = document.getElementById('phases-list');
+              
+              if (phases.length === 0) {
+                listEl.innerHTML = '<p class="text-gray-500 text-center py-8">まだフェーズが登録されていません</p>';
+                return;
+              }
+              
+              listEl.innerHTML = phases.map(phase => \`
+                <div class="border border-gray-200 rounded-lg p-4 hover:border-blue-400 transition">
+                  <div class="flex justify-between items-start">
+                    <div class="flex-1">
+                      <h3 class="text-lg font-bold text-gray-800">\${phase.name}</h3>
+                      <p class="text-gray-600 mt-1">\${phase.description || '説明なし'}</p>
+                      <p class="text-sm text-gray-400 mt-2">表示順序: \${phase.order_index}</p>
+                    </div>
+                    <div class="flex gap-2">
+                      <a href="/admin/modules?phase_id=\${phase.id}" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm">
+                        <i class="fas fa-book mr-1"></i>モジュール管理
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              \`).join('');
+            } catch (error) {
+              console.error('フェーズの読み込みエラー:', error);
+              document.getElementById('phases-list').innerHTML = '<p class="text-red-500 text-center py-8">エラーが発生しました</p>';
+            }
+          }
+          
+          // フェーズ作成
+          document.getElementById('create-phase-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = {
+              name: formData.get('name'),
+              description: formData.get('description'),
+              order_index: parseInt(formData.get('order_index'))
+            };
+            
+            try {
+              await axios.post('/api/admin/phases', data);
+              alert('フェーズを作成しました！');
+              e.target.reset();
+              loadPhases();
+            } catch (error) {
+              console.error('フェーズ作成エラー:', error);
+              alert('エラーが発生しました');
+            }
+          });
+          
+          // ページ読み込み時にフェーズ一覧を取得
+          loadPhases();
+        </script>
+    </body>
+    </html>
+  `)
+})
+
 export default app
