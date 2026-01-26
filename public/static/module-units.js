@@ -401,12 +401,7 @@ const unitsSteps = [
         { id: 'C', text: '9.5km', correct: false, explanation: '計算が違います。800m = 0.8kmに換算してから足します。' }
       ]
     }
-  }
-];
-
-// ステップをグローバルに登録
-window.unitsSteps = unitsSteps;
-console.log('✅ 単位と量モジュール読み込み完了:', unitsSteps.length, 'ステップ');
+  },
 
   // ========================================
   // ステップ5: いろいろな単位（長さ・重さ・時間）

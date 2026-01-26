@@ -144,11 +144,7 @@ const proportionSteps = [
         { id: 'C', text: '同じ', correct: false, explanation: '計算すると異なります。' }
       ]
     }
-  }
-];
-
-window.proportionSteps = proportionSteps;
-console.log('✅ 割合の直感モジュール読み込み完了:', proportionSteps.length, 'ステップ');
+  },
 
   // ========================================
   // ステップ3: 百分率（パーセント）の意味

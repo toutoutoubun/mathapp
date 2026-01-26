@@ -161,11 +161,7 @@ const approximationSteps = [
         { id: 'C', text: '約14,000平方km', correct: false, explanation: '7は5以上なので、切り上げます。' }
       ]
     }
-  }
-];
-
-window.approximationSteps = approximationSteps;
-console.log('✅ 概数モジュール読み込み完了:', approximationSteps.length, 'ステップ');
+  },
 
   // ========================================
   // ステップ3: がい数の作り方（十の位まで）

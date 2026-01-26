@@ -469,12 +469,7 @@ const cardinalitySteps = [
         { id: 'C', text: '5と6を足した数', correct: false, explanation: 'ここでは足し算ではなく、位の値を考えます。' }
       ]
     }
-  }
-];
-
-// ステップをグローバルに登録
-window.cardinalitySteps = cardinalitySteps;
-console.log('✅ 基数性モジュール読み込み完了:', cardinalitySteps.length, 'ステップ');
+  },
 
   // ========================================
   // ステップ6: 0（ゼロ）の意味
