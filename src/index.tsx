@@ -363,9 +363,9 @@ app.get('/module/graph_basics', (c) => {
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-        <script src="/static/app.js?v=3"></script>
-        <script src="/static/graph-module.js?v=3"></script>
-        <script src="/static/graph-learn-v3.js?v=3"></script>
+        <script src="/static/app.js?v=4"></script>
+        <script src="/static/graph-module.js?v=4"></script>
+        <script src="/static/graph-learn-v3.js?v=4"></script>
     </body>
     </html>
   `)

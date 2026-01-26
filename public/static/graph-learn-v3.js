@@ -122,6 +122,9 @@ function renderStep(index) {
     const understandingCheck = contentArea.querySelector('#understanding-check');
     const quizSection = contentArea.querySelector('#quiz-section');
     
+    console.log('チェックボックス要素:', understandingCheck ? 'OK' : 'NG');
+    console.log('クイズセクション要素:', quizSection ? 'OK' : 'NG');
+    
     if (understandingCheck && quizSection) {
       understandingCheck.addEventListener('change', function() {
         if (this.checked) {
@@ -137,6 +140,9 @@ function renderStep(index) {
           updateNavigationButtons();
         }
       });
+      console.log('✓ チェックボックスイベントリスナー設定完了');
+    } else {
+      console.error('❌ チェックボックスまたはクイズセクションが見つかりません');
     }
     
     contentArea.querySelectorAll('.quiz-option').forEach(optionEl => {
