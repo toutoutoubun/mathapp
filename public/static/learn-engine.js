@@ -312,11 +312,17 @@ window.LearningEngine = {
       nextBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
       
       if (isLastStep) {
-        nextBtn.textContent = '完了';
-        nextBtn.onclick = () => this.completeModule();
+        // 最後のステップの場合、ボタンテキストを「完了」に変更
+        const icon = nextBtn.querySelector('i');
+        nextBtn.innerHTML = '完了';
+        if (icon) nextBtn.appendChild(icon);
       } else {
-        nextBtn.textContent = '次へ →';
-        nextBtn.onclick = () => this.goToStep(this.currentStepIndex + 1);
+        // 通常のステップの場合、ボタンテキストを「次へ」に保持
+        const icon = nextBtn.querySelector('i');
+        if (!nextBtn.textContent.includes('次へ')) {
+          nextBtn.innerHTML = '次へ';
+          if (icon) nextBtn.appendChild(icon);
+        }
       }
       
       console.log('✅ 次へボタン有効化');
@@ -325,7 +331,7 @@ window.LearningEngine = {
       nextBtn.disabled = true;
       nextBtn.classList.add('opacity-50', 'cursor-not-allowed');
       nextBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
-      nextBtn.textContent = 'クイズに答えてください';
+      nextBtn.innerHTML = 'クイズに答えてください';
       
       console.log('🔒 次へボタン無効（クイズ未回答）');
     }

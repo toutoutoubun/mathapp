@@ -39,6 +39,10 @@ document.addEventListener('DOMContentLoaded', function() {
       steps = window.formulasSteps;
       moduleName = '公式集';
       break;
+    case 'integers':
+      steps = window.integersSteps;
+      moduleName = '正の数・負の数';
+      break;
     default:
       console.error('❌ 不明なモジュールID:', moduleId);
       return;
@@ -83,6 +87,7 @@ function getModuleIdFromPath() {
   if (path.includes('proportions')) return 'proportions';
   if (path.includes('approximation')) return 'approximation';
   if (path.includes('formulas')) return 'formulas';
+  if (path.includes('integers')) return 'integers';
   
   return '';
 }
@@ -168,7 +173,16 @@ function goToPreviousStep() {
 // 次へボタンのイベントハンドラー
 function goToNextStep() {
   if (window.LearningEngine) {
-    window.LearningEngine.nextStep();
+    const currentIndex = window.LearningEngine.currentStepIndex;
+    const totalSteps = window.LearningEngine.moduleSteps.length;
+    
+    // 最後のステップの場合はモジュール完了
+    if (currentIndex === totalSteps - 1) {
+      window.LearningEngine.completeModule();
+    } else {
+      // 次のステップへ移動
+      window.LearningEngine.goToStep(currentIndex + 1);
+    }
   }
 }
 
