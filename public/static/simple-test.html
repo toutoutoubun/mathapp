@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>動作テスト</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="p-8 bg-gray-100">
+    <h1 class="text-3xl font-bold mb-6">ボタン動作テスト</h1>
+    
+    <div class="bg-white p-6 rounded-lg shadow-lg mb-6">
+        <h2 class="text-xl font-bold mb-4">クイズテスト</h2>
+        
+        <p class="mb-4">以下の選択肢をクリックしてください：</p>
+        
+        <div class="space-y-3">
+            <div class="quiz-option p-4 border-2 border-gray-300 rounded-lg cursor-pointer hover:border-blue-500" data-correct="false">
+                <span class="font-bold">A.</span> 選択肢1（不正解）
+            </div>
+            <div class="quiz-option p-4 border-2 border-gray-300 rounded-lg cursor-pointer hover:border-blue-500" data-correct="true">
+                <span class="font-bold">B.</span> 選択肢2（正解）
+            </div>
+            <div class="quiz-option p-4 border-2 border-gray-300 rounded-lg cursor-pointer hover:border-blue-500" data-correct="false">
+                <span class="font-bold">C.</span> 選択肢3（不正解）
+            </div>
+        </div>
+        
+        <div id="feedback" class="hidden mt-4 p-4 rounded-lg"></div>
+    </div>
+    
+    <div class="bg-white p-6 rounded-lg shadow-lg">
+        <button id="prev-btn" class="px-6 py-3 bg-gray-400 text-white rounded-lg mr-4" disabled>
+            ← 前へ
+        </button>
+        <button id="next-btn" class="px-6 py-3 bg-gray-400 text-white rounded-lg" disabled>
+            次へ →
+        </button>
+        
+        <div id="status" class="mt-4 text-sm text-gray-600"></div>
+    </div>
+    
+    <div class="mt-6 bg-blue-50 p-4 rounded-lg">
+        <h3 class="font-bold mb-2">コンソールログ:</h3>
+        <div id="console-log" class="bg-white p-4 rounded text-xs font-mono max-h-64 overflow-y-auto"></div>
+    </div>
+
+    <script>
+        let answered = false;
+        const nextBtn = document.getElementById('next-btn');
+        const feedback = document.getElementById('feedback');
+        const status = document.getElementById('status');
+        const consoleLog = document.getElementById('console-log');
+        
+        function log(message) {
+            console.log(message);
+            const logEntry = document.createElement('div');
+            logEntry.textContent = new Date().toLocaleTimeString() + ': ' + message;
+            consoleLog.appendChild(logEntry);
+            consoleLog.scrollTop = consoleLog.scrollHeight;
+        }
+        
+        log('ページ読み込み完了');
+        
+        document.querySelectorAll('.quiz-option').forEach(option => {
+            option.addEventListener('click', function() {
+                if (answered) {
+                    log('既に解答済み');
+                    return;
+                }
+                
+                log('選択肢がクリックされました');
+                answered = true;
+                
+                const isCorrect = this.dataset.correct === 'true';
+                log('正解: ' + isCorrect);
+                
+                if (isCorrect) {
+                    this.classList.add('bg-green-100', 'border-green-500');
+                    feedback.className = 'mt-4 p-4 rounded-lg bg-green-100 border-2 border-green-500';
+                    feedback.textContent = '✅ 正解です！';
+                    feedback.classList.remove('hidden');
+                    
+                    log('次へボタンを有効化します');
+                    nextBtn.disabled = false;
+                    nextBtn.classList.remove('bg-gray-400');
+                    nextBtn.classList.add('bg-blue-500', 'hover:bg-blue-600');
+                    status.textContent = '✓ 次へボタンが有効になりました';
+                    
+                    log('次へボタンの状態: disabled=' + nextBtn.disabled);
+                } else {
+                    this.classList.add('bg-red-100', 'border-red-500');
+                    feedback.className = 'mt-4 p-4 rounded-lg bg-yellow-100 border-2 border-yellow-500';
+                    feedback.textContent = '💡 もう一度考えてみましょう';
+                    feedback.classList.remove('hidden');
+                    
+                    setTimeout(() => {
+                        answered = false;
+                        this.classList.remove('bg-red-100', 'border-red-500');
+                        feedback.classList.add('hidden');
+                        log('リトライ可能になりました');
+                    }, 2000);
+                }
+            });
+        });
+        
+        nextBtn.addEventListener('click', function() {
+            log('次へボタンがクリックされました！');
+            alert('次へボタンが機能しています！');
+        });
+        
+        log('イベントリスナー設定完了');
+    </script>
+</body>
+</html>

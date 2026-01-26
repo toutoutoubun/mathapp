@@ -550,3 +550,9 @@ const graphSteps = [
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { graphSteps };
 }
+
+// ブラウザ用にwindowオブジェクトに登録
+if (typeof window !== 'undefined') {
+  window.graphSteps = graphSteps;
+  console.log('graphSteps registered:', graphSteps.length, 'steps');
+}
