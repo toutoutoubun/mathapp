@@ -177,10 +177,8 @@ const graphSteps = [
         { id: 'c', text: 'グラフの中心', explanation: '中心ではありません。原点は縦軸と横軸が交わる点です。' }
       ]
     }
-  }
-];
-
-{
+  },
+  {
     id: 'step4',
     title: 'ステップ4: 横軸を読もう',
     description: '横軸は「何を比べるか」を教えてくれます。',
