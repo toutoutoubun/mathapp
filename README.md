@@ -1,21 +1,206 @@
-```txt
+# 中学数学基礎概念支援WEBアプリ
+
+## プロジェクト概要
+
+**対象**: 算数障害（ディスカリキュリア）傾向があり、グラフ読解・基数性・量感の把握に困難を示すが、言語理解力（特に社会科文脈）が高い学習者
+
+**目的**: 
+- 中学校学習指導要領（数学）に基づく全内容の修了
+- 基数性・概数・量感といった算数段階の根本概念の再構築
+- 学習自己肯定感の回復
+
+## 🌐 公開URL
+
+- **開発環境**: https://3000-i6ktus6p7ehk606d96lyk-583b4d74.sandbox.novita.ai
+- **本番環境**: （デプロイ後に追加）
+
+## 📊 現在実装済みの機能
+
+### ✅ フェーズ0: 算数再翻訳
+
+#### 1. グラフの読解（完全実装）
+スモールステップで8つのステップに分割:
+- ステップ1: グラフの種類を識別する
+- ステップ2: 表題を読む
+- ステップ3: 原点を見つける
+- ステップ4: 横軸を読む
+- ステップ5: 縦軸を読む
+- ステップ6: 単位を確認する
+- ステップ7: 目盛りを読む
+- ステップ8: 特徴のある値を見つける
+
+各ステップには:
+- 視覚的な説明（SVGグラフ）
+- ハイライト機能
+- 練習問題（3択クイズ）
+- 即座のフィードバック
+- アフリカの国々を題材にした問題文脈
+
+### ✅ 支援機能
+
+#### 用語集
+- 学習した用語の一覧表示
+- 検索機能付き
+- 意味、例、イラスト付き説明
+
+#### 達成ログシステム
+- ステップ完了時にポイント獲得
+- 達成記録の履歴表示
+- 累計ポイント表示
+
+#### アフリカ都市カードコレクション
+- 学習進捗に応じてカードをアンロック
+- 6都市のカード（ナイロビ、ラゴス、カイロ、キガリ、アディスアベバ、ケープタウン）
+- 各カードには都市情報（人口、説明）を表示
+
+## 🗂️ データベース構造
+
+### テーブル一覧（Cloudflare D1）
+
+1. **user_progress** - ユーザーの学習進捗
+   - module_id, step_id, status（not_started/in_progress/completed）
+
+2. **answer_history** - 解答履歴
+   - question_id, answer, is_correct, explanation
+
+3. **achievement_log** - 達成記録
+   - achievement_type, points, title, description
+
+4. **africa_cards** - アフリカ都市カード
+   - card_id, city_name, country, population, description
+
+5. **glossary** - 用語集
+   - term, definition, example, module_id
+
+## 🎨 UI/UX設計の特徴
+
+### 配慮事項
+- **1画面1判断**: 情報を段階的に提示
+- **ハイライトシステム**: 今見るべき場所を色・動きで明示
+- **無制限の反復練習**: 不正解でも減点なし
+- **成功体験の可視化**: 達成記録とカードコレクション
+- **アフリカ文脈の活用**: 学習者の関心領域を活かした問題設計
+
+### アニメーション
+- フェードイン効果
+- ハイライトパルス（点滅）
+- スムーズなトランジション
+
+## 🛠️ 技術スタック
+
+- **フレームワーク**: Hono (Cloudflare Workers)
+- **フロントエンド**: TailwindCSS, Vanilla JavaScript
+- **データベース**: Cloudflare D1 (SQLite)
+- **デプロイ**: Cloudflare Pages
+- **開発環境**: PM2, Wrangler CLI
+
+## 📁 プロジェクト構造
+
+```
+webapp/
+├── src/
+│   └── index.tsx          # メインアプリケーション（API + HTMLルート）
+├── public/
+│   └── static/
+│       ├── style.css      # カスタムCSS（ハイライト、アニメーション）
+│       ├── app.js         # グローバルJavaScript（進捗管理、API通信）
+│       ├── graph-module.js   # グラフ読解モジュールデータ
+│       └── graph-learn.js    # グラフ学習ページロジック
+├── migrations/
+│   └── 0001_initial_schema.sql  # データベーススキーマ
+├── seed.sql               # 初期データ（用語集、カード）
+├── ecosystem.config.cjs   # PM2設定
+├── wrangler.jsonc         # Cloudflare設定
+└── package.json           # 依存関係とスクリプト
+```
+
+## 🚀 開発環境のセットアップ
+
+### 1. 依存関係のインストール
+```bash
 npm install
-npm run dev
 ```
 
-```txt
-npm run deploy
+### 2. ローカルD1データベースのセットアップ
+```bash
+npm run db:migrate:local
+npm run db:seed
 ```
 
-[For generating/synchronizing types based on your Worker configuration run](https://developers.cloudflare.com/workers/wrangler/commands/#types):
-
-```txt
-npm run cf-typegen
+### 3. ビルドと起動
+```bash
+npm run build
+pm2 start ecosystem.config.cjs
 ```
 
-Pass the `CloudflareBindings` as generics when instantiation `Hono`:
-
-```ts
-// src/index.ts
-const app = new Hono<{ Bindings: CloudflareBindings }>()
+### 4. アクセス
 ```
+http://localhost:3000
+```
+
+## 📝 スクリプト一覧
+
+```bash
+npm run build              # プロジェクトをビルド
+npm run dev:d1            # D1付きでローカル開発サーバー起動
+npm run db:migrate:local  # ローカルDBにマイグレーション適用
+npm run db:seed           # 初期データ投入
+npm run db:reset          # DB完全リセット
+npm run clean-port        # ポート3000をクリーンアップ
+npm run test              # 動作確認
+```
+
+## 🎯 今後の実装予定
+
+### フェーズ0（算数再翻訳）
+- [ ] 基数性の再構築モジュール
+- [ ] 単位と量モジュール
+- [ ] 割合の直感モジュール
+- [ ] 概数・おおよその判断モジュール
+
+### 追加機能
+- [ ] 復習問題ページ
+- [ ] 中学1年「正の数・負の数」
+- [ ] 中学1年「文字式」
+- [ ] 中学1年「比例・反比例」
+
+## 📊 学習指導要領対応状況
+
+| フェーズ | モジュール | 学年 | 領域 | 実装状況 |
+|---------|----------|------|------|---------|
+| 0 | グラフの読解 | 前提 | データの活用 | ✅ 完了 |
+| 0 | 基数性の再構築 | 前提 | 数と式 | ⏳ 未実装 |
+| 0 | 単位と量 | 前提 | 数と式 | ⏳ 未実装 |
+| 0 | 割合の直感 | 前提 | 数と式 | ⏳ 未実装 |
+| 0 | 概数 | 前提 | 数と式 | ⏳ 未実装 |
+
+## 🏆 達成ポイントシステム
+
+- ステップ完了: 10ポイント
+- モジュール完了: 50ポイント
+
+### カードアンロック基準
+- 10ポイント: ナイロビ
+- 30ポイント: ラゴス
+- 60ポイント: カイロ
+- 100ポイント: キガリ
+- 150ポイント: アディスアベバ
+- 200ポイント: ケープタウン
+
+## 📄 ライセンス
+
+このプロジェクトは教育目的で作成されています。
+
+## 👥 開発者
+
+- プロジェクトリード: AI Assistant
+- 設計協力: 教育専門家
+
+## 📮 お問い合わせ
+
+質問や提案がある場合は、GitHubのIssuesをご利用ください。
+
+---
+
+**最終更新**: 2026-01-26
+**バージョン**: 0.1.0 (フェーズ0-1完了)
