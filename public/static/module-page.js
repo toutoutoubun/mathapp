@@ -28,12 +28,16 @@ document.addEventListener('DOMContentLoaded', function() {
       moduleName = '単位と量';
       break;
     case 'proportions':
-      steps = window.proportionSteps;
+      steps = window.proportionsSteps;
       moduleName = '割合の直感';
       break;
     case 'approximation':
       steps = window.approximationSteps;
       moduleName = '概数・おおよその判断';
+      break;
+    case 'formulas':
+      steps = window.formulasSteps;
+      moduleName = '公式集';
       break;
     default:
       console.error('❌ 不明なモジュールID:', moduleId);
@@ -78,8 +82,77 @@ function getModuleIdFromPath() {
   if (path.includes('units')) return 'units';
   if (path.includes('proportions')) return 'proportions';
   if (path.includes('approximation')) return 'approximation';
+  if (path.includes('formulas')) return 'formulas';
   
   return '';
+}
+
+// モジュールページを初期化する関数（外部から呼び出し可能）
+function initializeModulePage(moduleId) {
+  console.log('=== initializeModulePage 呼び出し ===', moduleId);
+  
+  // モジュールIDに応じてステップデータを取得
+  let steps = null;
+  let moduleName = '';
+  
+  switch(moduleId) {
+    case 'graph_basics':
+      steps = window.graphSteps;
+      moduleName = 'グラフの読解';
+      break;
+    case 'cardinality':
+      steps = window.cardinalitySteps;
+      moduleName = '基数性の再構築';
+      break;
+    case 'units':
+      steps = window.unitsSteps;
+      moduleName = '単位と量';
+      break;
+    case 'proportions':
+      steps = window.proportionsSteps;
+      moduleName = '割合の直感';
+      break;
+    case 'approximation':
+      steps = window.approximationSteps;
+      moduleName = '概数・おおよその判断';
+      break;
+    case 'formulas':
+      steps = window.formulasSteps;
+      moduleName = '公式集';
+      break;
+    case 'integers':
+      steps = window.integersSteps;
+      moduleName = '正の数・負の数';
+      break;
+    default:
+      console.error('❌ 不明なモジュールID:', moduleId);
+      return false;
+  }
+  
+  if (!steps || steps.length === 0) {
+    console.error('❌ ステップデータが見つかりません');
+    return false;
+  }
+  
+  console.log('✅ ステップデータ取得:', steps.length, 'ステップ');
+  
+  // 学習エンジンを初期化
+  if (window.LearningEngine) {
+    const success = window.LearningEngine.init(moduleId, steps);
+    if (success) {
+      window.LearningEngine.renderStepNavigation();
+      window.LearningEngine.renderStep(0);
+      window.LearningEngine.updateNavigationButtons();
+      console.log('✅ 学習エンジン初期化完了');
+      return true;
+    } else {
+      console.error('❌ 学習エンジンの初期化に失敗しました');
+      return false;
+    }
+  } else {
+    console.error('❌ 学習エンジンが見つかりません');
+    return false;
+  }
 }
 
 // 前へボタンのイベントハンドラー
@@ -92,5 +165,14 @@ function goToPreviousStep() {
   }
 }
 
+// 次へボタンのイベントハンドラー
+function goToNextStep() {
+  if (window.LearningEngine) {
+    window.LearningEngine.nextStep();
+  }
+}
+
 // グローバルに関数を公開
+window.initializeModulePage = initializeModulePage;
 window.goToPreviousStep = goToPreviousStep;
+window.goToNextStep = goToNextStep;
