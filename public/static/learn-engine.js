@@ -91,6 +91,25 @@ window.LearningEngine = {
     
     const step = this.moduleSteps[index];
     
+    // デバッグ: ステップデータの内容を確認
+    console.log('📊 ステップデータ:', {
+      id: step.id,
+      title: step.title,
+      hasContent: !!step.content,
+      hasQuiz: !!step.quiz,
+      hasDescription: !!step.description
+    });
+    
+    // クイズデータを確認
+    if (step.quiz) {
+      console.log('❓ クイズデータ:', {
+        question: step.quiz.question,
+        optionsCount: step.quiz.options ? step.quiz.options.length : 0
+      });
+    } else {
+      console.warn('⚠️ このステップにクイズがありません');
+    }
+    
     // 状態をリセット
     this.quizAnswered = false;
     this.understandingConfirmed = false;
