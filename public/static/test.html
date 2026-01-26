@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>デバッグテスト</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="p-8">
+    <h1 class="text-2xl font-bold mb-4">ボタンテスト</h1>
+    
+    <div class="mb-4">
+        <button id="test-btn" class="px-4 py-2 bg-blue-500 text-white rounded">
+            テストボタン
+        </button>
+        <button id="test-btn-disabled" class="px-4 py-2 bg-gray-400 text-white rounded" disabled>
+            無効なボタン
+        </button>
+    </div>
+    
+    <div id="output" class="bg-gray-100 p-4 rounded"></div>
+    
+    <script>
+        let clickCount = 0;
+        
+        document.getElementById('test-btn').addEventListener('click', () => {
+            clickCount++;
+            document.getElementById('output').innerHTML = `ボタンがクリックされました（${clickCount}回）`;
+            console.log('ボタンクリック:', clickCount);
+        });
+        
+        document.getElementById('test-btn-disabled').addEventListener('click', () => {
+            document.getElementById('output').innerHTML = '無効なボタンがクリックされました';
+        });
+        
+        console.log('テストページ読み込み完了');
+    </script>
+</body>
+</html>

@@ -207,7 +207,12 @@ async function handleQuizAnswer(optionEl, quiz) {
 
   feedbackArea.classList.remove('hidden');
   console.log('ナビゲーションボタン更新前 - quizAnswered:', quizAnswered);
-  updateNavigationButtons();
+  
+  // 重要: ボタン状態を強制的に更新
+  setTimeout(() => {
+    updateNavigationButtons();
+    console.log('ナビゲーションボタン更新完了');
+  }, 100);
 }
 
 // ステップ移動
@@ -238,11 +243,17 @@ function updateNavigationButtons() {
   }
 
   if (nextBtn) {
+    // 一旦すべてのプロパティをリセット
+    nextBtn.disabled = false;
+    nextBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+    
     if (currentStepIndex === graphSteps.length - 1) {
       // 最後のステップ
       if (quizAnswered) {
         nextBtn.textContent = '完了';
         nextBtn.innerHTML = '<i class="fas fa-check mr-2"></i>完了';
+        nextBtn.classList.remove('bg-gray-400');
+        nextBtn.classList.add('bg-green-500', 'hover:bg-green-600');
         nextBtn.disabled = false;
         nextBtn.onclick = async () => {
           console.log('完了ボタンがクリックされました');
@@ -266,19 +277,31 @@ function updateNavigationButtons() {
           }, 3000);
         };
       } else {
-        nextBtn.disabled = true;
         nextBtn.innerHTML = '問題に答えてください';
+        nextBtn.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+        nextBtn.classList.add('bg-gray-400', 'opacity-50', 'cursor-not-allowed');
+        nextBtn.disabled = true;
       }
     } else {
       // 途中のステップ
       nextBtn.innerHTML = '次へ<i class="fas fa-arrow-right ml-2"></i>';
-      nextBtn.disabled = !quizAnswered;
-      nextBtn.onclick = () => {
-        console.log('次へボタンがクリックされました');
-        goToStep(currentStepIndex + 1);
-      };
+      
+      if (quizAnswered) {
+        nextBtn.disabled = false;
+        nextBtn.classList.remove('bg-gray-400', 'opacity-50', 'cursor-not-allowed');
+        nextBtn.classList.add('bg-blue-500', 'hover:bg-blue-600');
+        nextBtn.onclick = () => {
+          console.log('次へボタンがクリックされました');
+          goToStep(currentStepIndex + 1);
+        };
+      } else {
+        nextBtn.disabled = true;
+        nextBtn.classList.remove('bg-blue-500', 'hover:bg-blue-600');
+        nextBtn.classList.add('bg-gray-400', 'opacity-50', 'cursor-not-allowed');
+        nextBtn.onclick = null;
+      }
     }
   }
   
-  console.log('ボタン状態 - 次へボタン無効:', nextBtn?.disabled);
+  console.log('ボタン状態 - quizAnswered:', quizAnswered, '次へボタン無効:', nextBtn?.disabled);
 }
