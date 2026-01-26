@@ -462,9 +462,33 @@ app.get('/module/cardinality', (c) => {
         </div>
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script src="/static/app.js"></script>
-        <script src="/static/learn-engine.js"></script>
         <script src="/static/module-cardinality.js"></script>
-        <script src="/static/module-page.js"></script>
+        <script src="/static/learn-engine.js"></script>
+        <script>
+          document.addEventListener('DOMContentLoaded', function() {
+            if (window.cardinalitySteps && window.LearningEngine) {
+              window.LearningEngine.init('cardinality', window.cardinalitySteps);
+              window.LearningEngine.renderStepNavigation();
+              window.LearningEngine.renderStep(0);
+              window.LearningEngine.updateNavigationButtons();
+            }
+          });
+          function goToPreviousStep() {
+            if (window.LearningEngine && window.LearningEngine.currentStepIndex > 0) {
+              window.LearningEngine.goToStep(window.LearningEngine.currentStepIndex - 1);
+            }
+          }
+          function goToNextStep() {
+            if (window.LearningEngine) {
+              const idx = window.LearningEngine.currentStepIndex;
+              const total = window.LearningEngine.moduleSteps.length;
+              if (idx === total - 1) window.LearningEngine.completeModule();
+              else window.LearningEngine.goToStep(idx + 1);
+            }
+          }
+          window.goToPreviousStep = goToPreviousStep;
+          window.goToNextStep = goToNextStep;
+        </script>
     </body>
     </html>
   `)
@@ -524,9 +548,33 @@ app.get('/module/units', (c) => {
         </div>
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script src="/static/app.js"></script>
-        <script src="/static/learn-engine.js"></script>
         <script src="/static/module-units.js"></script>
-        <script src="/static/module-page.js"></script>
+        <script src="/static/learn-engine.js"></script>
+        <script>
+          document.addEventListener('DOMContentLoaded', function() {
+            if (window.unitsSteps && window.LearningEngine) {
+              window.LearningEngine.init('units', window.unitsSteps);
+              window.LearningEngine.renderStepNavigation();
+              window.LearningEngine.renderStep(0);
+              window.LearningEngine.updateNavigationButtons();
+            }
+          });
+          function goToPreviousStep() {
+            if (window.LearningEngine && window.LearningEngine.currentStepIndex > 0) {
+              window.LearningEngine.goToStep(window.LearningEngine.currentStepIndex - 1);
+            }
+          }
+          function goToNextStep() {
+            if (window.LearningEngine) {
+              const idx = window.LearningEngine.currentStepIndex;
+              const total = window.LearningEngine.moduleSteps.length;
+              if (idx === total - 1) window.LearningEngine.completeModule();
+              else window.LearningEngine.goToStep(idx + 1);
+            }
+          }
+          window.goToPreviousStep = goToPreviousStep;
+          window.goToNextStep = goToNextStep;
+        </script>
     </body>
     </html>
   `)
@@ -586,9 +634,33 @@ app.get('/module/proportions', (c) => {
         </div>
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script src="/static/app.js"></script>
-        <script src="/static/learn-engine.js"></script>
         <script src="/static/module-proportions.js"></script>
-        <script src="/static/module-page.js"></script>
+        <script src="/static/learn-engine.js"></script>
+        <script>
+          document.addEventListener('DOMContentLoaded', function() {
+            if (window.proportionsSteps && window.LearningEngine) {
+              window.LearningEngine.init('proportions', window.proportionsSteps);
+              window.LearningEngine.renderStepNavigation();
+              window.LearningEngine.renderStep(0);
+              window.LearningEngine.updateNavigationButtons();
+            }
+          });
+          function goToPreviousStep() {
+            if (window.LearningEngine && window.LearningEngine.currentStepIndex > 0) {
+              window.LearningEngine.goToStep(window.LearningEngine.currentStepIndex - 1);
+            }
+          }
+          function goToNextStep() {
+            if (window.LearningEngine) {
+              const idx = window.LearningEngine.currentStepIndex;
+              const total = window.LearningEngine.moduleSteps.length;
+              if (idx === total - 1) window.LearningEngine.completeModule();
+              else window.LearningEngine.goToStep(idx + 1);
+            }
+          }
+          window.goToPreviousStep = goToPreviousStep;
+          window.goToNextStep = goToNextStep;
+        </script>
     </body>
     </html>
   `)
@@ -648,9 +720,33 @@ app.get('/module/approximation', (c) => {
         </div>
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script src="/static/app.js"></script>
-        <script src="/static/learn-engine.js"></script>
         <script src="/static/module-approximation.js"></script>
-        <script src="/static/module-page.js"></script>
+        <script src="/static/learn-engine.js"></script>
+        <script>
+          document.addEventListener('DOMContentLoaded', function() {
+            if (window.approximationSteps && window.LearningEngine) {
+              window.LearningEngine.init('approximation', window.approximationSteps);
+              window.LearningEngine.renderStepNavigation();
+              window.LearningEngine.renderStep(0);
+              window.LearningEngine.updateNavigationButtons();
+            }
+          });
+          function goToPreviousStep() {
+            if (window.LearningEngine && window.LearningEngine.currentStepIndex > 0) {
+              window.LearningEngine.goToStep(window.LearningEngine.currentStepIndex - 1);
+            }
+          }
+          function goToNextStep() {
+            if (window.LearningEngine) {
+              const idx = window.LearningEngine.currentStepIndex;
+              const total = window.LearningEngine.moduleSteps.length;
+              if (idx === total - 1) window.LearningEngine.completeModule();
+              else window.LearningEngine.goToStep(idx + 1);
+            }
+          }
+          window.goToPreviousStep = goToPreviousStep;
+          window.goToNextStep = goToNextStep;
+        </script>
     </body>
     </html>
   `)
