@@ -14,7 +14,28 @@ app.use('/api/*', cors())
 // 静的ファイル配信
 app.use('/static/*', serveStatic({ root: './' }))
 
-// ==================== API Routes ====================
+// ==================== Teacher API Routes ====================
+
+// エディタ一覧取得
+app.get('/api/teacher/editors', async (c) => {
+  const { DB } = c.env
+  const result = await DB.prepare('SELECT * FROM editors ORDER BY created_at DESC').all()
+  return c.json({ editors: result.results })
+})
+
+// エディタ作成
+app.post('/api/teacher/editors', async (c) => {
+  const { DB } = c.env
+  const { name, description, grade_level, subject } = await c.req.json()
+  
+  const result = await DB.prepare(
+    'INSERT INTO editors (name, description, grade_level, subject) VALUES (?, ?, ?, ?)'
+  ).bind(name, description || null, grade_level || null, subject || null).run()
+  
+  return c.json({ success: true, id: result.meta.last_row_id })
+})
+
+// ==================== Student API Routes ====================
 
 // 進捗状況取得
 app.get('/api/progress', async (c) => {
@@ -152,7 +173,7 @@ app.get('/api/glossary', async (c) => {
 
 // ==================== HTML Routes ====================
 
-// メインページ - 学習アプリ開発プラットフォーム管理画面
+// メインページ - 教師用プラットフォーム
 app.get('/', (c) => {
   return c.html(`
     <!DOCTYPE html>
@@ -160,7 +181,7 @@ app.get('/', (c) => {
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>学習アプリ開発プラットフォーム</title>
+        <title>学習アプリ開発プラットフォーム（教師用）</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
     </head>
@@ -170,12 +191,12 @@ app.get('/', (c) => {
             <div class="max-w-7xl mx-auto px-4 py-4">
                 <div class="flex justify-between items-center">
                     <h1 class="text-2xl font-bold">
-                        <i class="fas fa-magic mr-2"></i>
-                        学習アプリ開発プラットフォーム
+                        <i class="fas fa-chalkboard-teacher mr-2"></i>
+                        学習アプリ開発プラットフォーム（教師用）
                     </h1>
                     <div class="flex gap-4">
-                        <a href="/demo" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
-                            <i class="fas fa-graduation-cap mr-2"></i>デモ（数学アプリ）
+                        <a href="/student" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-400 transition">
+                            <i class="fas fa-user-graduate mr-2"></i>生徒画面を見る
                         </a>
                     </div>
                 </div>
@@ -188,35 +209,65 @@ app.get('/', (c) => {
             <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
                 <div class="text-center">
                     <div class="text-6xl mb-4">🎓</div>
-                    <h2 class="text-3xl font-bold text-gray-800 mb-4">ようこそ！</h2>
+                    <h2 class="text-3xl font-bold text-gray-800 mb-4">教師用管理画面</h2>
                     <p class="text-lg text-gray-600 mb-6">
-                        ノーコードで学習アプリを作成できるプラットフォームです。<br>
-                        フェーズ、モジュール、ステップを作成して、独自の学習コンテンツを開発しましょう。
+                        学年単位で学習コンテンツを作成できるプラットフォームです。<br>
+                        <strong>エディタ（学年）→ フェーズ（大単元）→ モジュール（中単元）→ ステップ（学習内容）</strong>
                     </p>
                 </div>
             </div>
 
-            <!-- 機能カード -->
+            <!-- 階層構造の説明 -->
+            <div class="bg-gradient-to-r from-blue-50 to-purple-50 rounded-xl shadow-lg p-6 mb-8">
+                <h3 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-sitemap mr-2 text-indigo-600"></i>
+                    コンテンツの階層構造
+                </h3>
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <div class="text-3xl mb-2">1️⃣</div>
+                        <h4 class="font-bold text-gray-800 mb-1">エディタ</h4>
+                        <p class="text-xs text-gray-600">学年単位（例：中1数学）</p>
+                    </div>
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <div class="text-3xl mb-2">2️⃣</div>
+                        <h4 class="font-bold text-gray-800 mb-1">フェーズ</h4>
+                        <p class="text-xs text-gray-600">大単元（例：正負の数）</p>
+                    </div>
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <div class="text-3xl mb-2">3️⃣</div>
+                        <h4 class="font-bold text-gray-800 mb-1">モジュール</h4>
+                        <p class="text-xs text-gray-600">中単元（例：加法）</p>
+                    </div>
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <div class="text-3xl mb-2">4️⃣</div>
+                        <h4 class="font-bold text-gray-800 mb-1">ステップ</h4>
+                        <p class="text-xs text-gray-600">学習内容（1概念）</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 管理機能カード -->
             <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                <!-- ノーコードエディタ -->
-                <a href="/static/nocode-editor.html" class="block p-6 bg-gradient-to-br from-blue-100 to-blue-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
-                    <div class="text-5xl mb-4">✨</div>
-                    <h3 class="text-xl font-bold text-gray-800 mb-2">ノーコードエディタ</h3>
+                <!-- エディタ管理 -->
+                <a href="/teacher/editors" class="block p-6 bg-gradient-to-br from-indigo-100 to-indigo-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
+                    <div class="text-5xl mb-4">📚</div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">エディタ管理</h3>
                     <p class="text-gray-600 text-sm mb-4">
-                        ドラッグ＆ドロップで学習コンテンツを作成
+                        学年単位のプロジェクトを作成・管理
                     </p>
-                    <div class="flex items-center text-blue-600 font-semibold">
-                        エディタを開く
+                    <div class="flex items-center text-indigo-600 font-semibold">
+                        管理画面へ
                         <i class="fas fa-arrow-right ml-2"></i>
                     </div>
                 </a>
 
                 <!-- フェーズ管理 -->
-                <a href="/admin/phases" class="block p-6 bg-gradient-to-br from-purple-100 to-purple-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
-                    <div class="text-5xl mb-4">📚</div>
+                <a href="/teacher/phases" class="block p-6 bg-gradient-to-br from-purple-100 to-purple-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
+                    <div class="text-5xl mb-4">📖</div>
                     <h3 class="text-xl font-bold text-gray-800 mb-2">フェーズ管理</h3>
                     <p class="text-gray-600 text-sm mb-4">
-                        学習の大きな区分を作成・管理
+                        大単元を作成・管理
                     </p>
                     <div class="flex items-center text-purple-600 font-semibold">
                         管理画面へ
@@ -225,11 +276,11 @@ app.get('/', (c) => {
                 </a>
 
                 <!-- モジュール管理 -->
-                <a href="/admin/modules" class="block p-6 bg-gradient-to-br from-green-100 to-green-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
-                    <div class="text-5xl mb-4">📖</div>
+                <a href="/teacher/modules" class="block p-6 bg-gradient-to-br from-green-100 to-green-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
+                    <div class="text-5xl mb-4">📝</div>
                     <h3 class="text-xl font-bold text-gray-800 mb-2">モジュール管理</h3>
                     <p class="text-gray-600 text-sm mb-4">
-                        学習単元を作成・管理
+                        中単元を作成・管理
                     </p>
                     <div class="flex items-center text-green-600 font-semibold">
                         管理画面へ
@@ -238,8 +289,8 @@ app.get('/', (c) => {
                 </a>
 
                 <!-- ステップ管理 -->
-                <a href="/admin/steps" class="block p-6 bg-gradient-to-br from-yellow-100 to-yellow-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
-                    <div class="text-5xl mb-4">📝</div>
+                <a href="/teacher/steps" class="block p-6 bg-gradient-to-br from-yellow-100 to-yellow-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
+                    <div class="text-5xl mb-4">✏️</div>
                     <h3 class="text-xl font-bold text-gray-800 mb-2">ステップ管理</h3>
                     <p class="text-gray-600 text-sm mb-4">
                         学習ステップと説明文を作成
@@ -250,62 +301,31 @@ app.get('/', (c) => {
                     </div>
                 </a>
 
-                <!-- インタラクティブ要素 -->
-                <a href="/admin/interactive" class="block p-6 bg-gradient-to-br from-orange-100 to-orange-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
-                    <div class="text-5xl mb-4">📊</div>
-                    <h3 class="text-xl font-bold text-gray-800 mb-2">インタラクティブ要素</h3>
+                <!-- コンテンツ作成 -->
+                <a href="/teacher/content" class="block p-6 bg-gradient-to-br from-blue-100 to-blue-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
+                    <div class="text-5xl mb-4">🎨</div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">コンテンツ作成</h3>
                     <p class="text-gray-600 text-sm mb-4">
-                        図形、グラフ、表などを作成
+                        テキスト、図形、問題を作成
                     </p>
-                    <div class="flex items-center text-orange-600 font-semibold">
+                    <div class="flex items-center text-blue-600 font-semibold">
                         作成画面へ
                         <i class="fas fa-arrow-right ml-2"></i>
                     </div>
                 </a>
 
-                <!-- 問題管理 -->
-                <a href="/admin/questions" class="block p-6 bg-gradient-to-br from-red-100 to-red-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
-                    <div class="text-5xl mb-4">❓</div>
-                    <h3 class="text-xl font-bold text-gray-800 mb-2">問題管理</h3>
+                <!-- 生徒画面プレビュー -->
+                <a href="/student" class="block p-6 bg-gradient-to-br from-green-100 to-green-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
+                    <div class="text-5xl mb-4">👀</div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">生徒画面</h3>
                     <p class="text-gray-600 text-sm mb-4">
-                        問題と解答を作成
+                        作成したコンテンツを確認
                     </p>
-                    <div class="flex items-center text-red-600 font-semibold">
-                        作成画面へ
+                    <div class="flex items-center text-green-600 font-semibold">
+                        生徒画面を見る
                         <i class="fas fa-arrow-right ml-2"></i>
                     </div>
                 </a>
-            </div>
-
-            <!-- 特徴紹介 -->
-            <div class="bg-white rounded-xl shadow-lg p-8">
-                <h3 class="text-2xl font-bold text-gray-800 mb-6 text-center">
-                    <i class="fas fa-star mr-2 text-yellow-500"></i>
-                    プラットフォームの特徴
-                </h3>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="text-center">
-                        <div class="text-4xl mb-3">🚀</div>
-                        <h4 class="font-bold text-gray-800 mb-2">ノーコード開発</h4>
-                        <p class="text-sm text-gray-600">
-                            プログラミング不要で学習アプリを作成
-                        </p>
-                    </div>
-                    <div class="text-center">
-                        <div class="text-4xl mb-3">🎨</div>
-                        <h4 class="font-bold text-gray-800 mb-2">柔軟なカスタマイズ</h4>
-                        <p class="text-sm text-gray-600">
-                            フェーズ・モジュール・ステップを自由に構成
-                        </p>
-                    </div>
-                    <div class="text-center">
-                        <div class="text-4xl mb-3">📱</div>
-                        <h4 class="font-bold text-gray-800 mb-2">レスポンシブ対応</h4>
-                        <p class="text-sm text-gray-600">
-                            PC・タブレット・スマホで快適に動作
-                        </p>
-                    </div>
-                </div>
             </div>
         </div>
     </body>
@@ -313,8 +333,95 @@ app.get('/', (c) => {
   `)
 })
 
-// デモページ - 数学学習アプリ
-app.get('/demo', (c) => {
+// 生徒用ホームページ
+app.get('/student', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>学習アプリ</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <link href="/static/style.css" rel="stylesheet">
+    </head>
+    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
+        <!-- ナビゲーションバー -->
+        <nav class="bg-white shadow-md">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold text-purple-600">
+                        <i class="fas fa-graduation-cap mr-2"></i>
+                        学習アプリ
+                    </h1>
+                    <div class="flex gap-4">
+                        <a href="/student" class="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition">
+                            <i class="fas fa-home mr-2"></i>ホーム
+                        </a>
+                        <a href="/student/achievements" class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition">
+                            <i class="fas fa-trophy mr-2"></i>達成記録
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- メインコンテンツ -->
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">ようこそ!</h2>
+                <p class="text-lg text-gray-600 mb-6">
+                    自分のペースで学習を進めていきましょう。
+                </p>
+            </div>
+
+            <!-- 利用可能なコンテンツ -->
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+                <h3 class="text-2xl font-bold text-gray-800 mb-6">
+                    <i class="fas fa-book-open mr-2 text-blue-600"></i>
+                    利用可能な学習コンテンツ
+                </h3>
+                <p class="text-gray-600 mb-6">
+                    現在、デモコンテンツが利用可能です。
+                </p>
+                
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <!-- デモ: 中学数学 -->
+                    <a href="/student/demo" class="block p-6 bg-gradient-to-br from-blue-100 to-purple-200 rounded-lg hover:shadow-xl transition transform hover:-translate-y-1">
+                        <div class="text-4xl mb-4">📐</div>
+                        <h4 class="text-xl font-bold text-gray-800 mb-2">中学数学（デモ）</h4>
+                        <p class="text-gray-600 text-sm">
+                            算数の基礎から中学1年生の内容まで
+                        </p>
+                        <div class="mt-4 text-sm text-blue-600 font-semibold">
+                            学習を始める →
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <!-- 進捗状況 -->
+            <div class="bg-white rounded-xl shadow-lg p-8">
+                <h3 class="text-2xl font-bold text-gray-800 mb-6">
+                    <i class="fas fa-chart-line mr-2"></i>
+                    あなたの進捗
+                </h3>
+                <div id="progress-container" class="space-y-4">
+                    <p class="text-gray-500">学習を始めると、ここに進捗が表示されます。</p>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script src="/static/app.js"></script>
+    </body>
+    </html>
+  `)
+})
+
+// デモページ - 数学学習アプリ（生徒用）
+app.get('/student/demo', (c) => {
   return c.html(`
     <!DOCTYPE html>
     <html lang="ja">
@@ -336,19 +443,13 @@ app.get('/demo', (c) => {
                         数学の冒険（デモ）
                     </h1>
                     <div class="flex gap-4">
-                        <a href="/" class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition">
-                            <i class="fas fa-arrow-left mr-2"></i>プラットフォームへ戻る
+                        <a href="/student" class="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition">
+                            <i class="fas fa-arrow-left mr-2"></i>戻る
                         </a>
-                        <a href="/demo" class="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition">
+                        <a href="/student/demo" class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition">
                             <i class="fas fa-home mr-2"></i>ホーム
                         </a>
-                        <a href="/glossary" class="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">
-                            <i class="fas fa-book mr-2"></i>用語集
-                        </a>
-                        <a href="/cards" class="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition">
-                            <i class="fas fa-image mr-2"></i>カード
-                        </a>
-                        <a href="/achievements" class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition">
+                        <a href="/student/achievements" class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition">
                             <i class="fas fa-trophy mr-2"></i>達成記録
                         </a>
                     </div>
@@ -995,8 +1096,8 @@ app.get('/glossary', async (c) => {
   `)
 })
 
-// 達成記録ページ
-app.get('/achievements', async (c) => {
+// 達成記録ページ（生徒用）
+app.get('/student/achievements', async (c) => {
   const { DB } = c.env
   const userId = 'default_user'
   const result = await DB.prepare(
@@ -1389,29 +1490,40 @@ app.get('/module/integers', (c) => {
   `)
 })
 
-// ==================== 管理画面 API Routes ====================
+// ==================== Teacher Admin API Routes ====================
 
 // フェーズ一覧取得
-app.get('/api/admin/phases', async (c) => {
+app.get('/api/teacher/phases', async (c) => {
   const { DB } = c.env
-  const result = await DB.prepare('SELECT * FROM phases ORDER BY order_index').all()
+  const editor_id = c.req.query('editor_id')
+  
+  let query = 'SELECT * FROM phases'
+  let params: any[] = []
+  
+  if (editor_id) {
+    query += ' WHERE editor_id = ?'
+    params.push(editor_id)
+  }
+  
+  query += ' ORDER BY order_index'
+  const result = await DB.prepare(query).bind(...params).all()
   return c.json({ phases: result.results })
 })
 
 // フェーズ作成
-app.post('/api/admin/phases', async (c) => {
+app.post('/api/teacher/phases', async (c) => {
   const { DB } = c.env
-  const { name, description, order_index } = await c.req.json()
+  const { editor_id, name, description, order_index } = await c.req.json()
   
   const result = await DB.prepare(
-    'INSERT INTO phases (name, description, order_index) VALUES (?, ?, ?)'
-  ).bind(name, description || null, order_index || 0).run()
+    'INSERT INTO phases (editor_id, name, description, order_index) VALUES (?, ?, ?, ?)'
+  ).bind(editor_id || null, name, description || null, order_index || 0).run()
   
   return c.json({ success: true, id: result.meta.last_row_id })
 })
 
 // モジュール一覧取得
-app.get('/api/admin/modules', async (c) => {
+app.get('/api/teacher/modules', async (c) => {
   const { DB } = c.env
   const phase_id = c.req.query('phase_id')
   
@@ -1427,7 +1539,7 @@ app.get('/api/admin/modules', async (c) => {
 })
 
 // モジュール作成
-app.post('/api/admin/modules', async (c) => {
+app.post('/api/teacher/modules', async (c) => {
   const { DB } = c.env
   const { phase_id, name, description, icon, color, order_index } = await c.req.json()
   
@@ -1439,7 +1551,7 @@ app.post('/api/admin/modules', async (c) => {
 })
 
 // ステップ一覧取得
-app.get('/api/admin/steps', async (c) => {
+app.get('/api/teacher/steps', async (c) => {
   const { DB } = c.env
   const module_id = c.req.query('module_id')
   
@@ -1455,7 +1567,7 @@ app.get('/api/admin/steps', async (c) => {
 })
 
 // ステップ作成
-app.post('/api/admin/steps', async (c) => {
+app.post('/api/teacher/steps', async (c) => {
   const { DB } = c.env
   const { module_id, title, description, order_index } = await c.req.json()
   
@@ -1467,7 +1579,7 @@ app.post('/api/admin/steps', async (c) => {
 })
 
 // コンテンツブロック作成
-app.post('/api/admin/content-blocks', async (c) => {
+app.post('/api/teacher/content-blocks', async (c) => {
   const { DB } = c.env
   const { step_id, block_type, content, order_index } = await c.req.json()
   
@@ -1479,7 +1591,7 @@ app.post('/api/admin/content-blocks', async (c) => {
 })
 
 // 問題作成
-app.post('/api/admin/questions', async (c) => {
+app.post('/api/teacher/questions', async (c) => {
   const { DB } = c.env
   const { step_id, question_type, question_text, config, order_index } = await c.req.json()
   
