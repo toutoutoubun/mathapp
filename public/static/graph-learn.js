@@ -6,6 +6,14 @@ const MODULE_ID = 'graph_basics';
 
 // ページ読み込み時の初期化
 document.addEventListener('DOMContentLoaded', () => {
+  console.log('グラフ学習ページ初期化');
+  console.log('利用可能なステップ数:', graphSteps ? graphSteps.length : 0);
+  
+  if (typeof graphSteps === 'undefined') {
+    console.error('graphStepsが定義されていません');
+    return;
+  }
+  
   renderStepNavigation();
   renderStep(currentStepIndex);
   updateNavigationButtons();
@@ -14,7 +22,10 @@ document.addEventListener('DOMContentLoaded', () => {
 // ステップナビゲーション描画
 function renderStepNavigation() {
   const navContainer = document.getElementById('step-nav');
-  if (!navContainer) return;
+  if (!navContainer) {
+    console.error('step-navが見つかりません');
+    return;
+  }
 
   let html = '';
   graphSteps.forEach((step, index) => {
@@ -35,8 +46,12 @@ function renderStepNavigation() {
 
 // ステップ描画
 function renderStep(index) {
+  console.log('ステップ描画:', index);
   const contentArea = document.getElementById('content-area');
-  if (!contentArea || !graphSteps[index]) return;
+  if (!contentArea || !graphSteps[index]) {
+    console.error('content-areaまたはステップが見つかりません');
+    return;
+  }
 
   const step = graphSteps[index];
   quizAnswered = false;
@@ -62,7 +77,7 @@ function renderStep(index) {
 
         <div id="quiz-options" class="space-y-3">
           ${step.quiz.options.map(option => `
-            <div class="quiz-option" data-option-id="${option.id}">
+            <div class="quiz-option" data-option-id="${option.id}" data-is-correct="${option.correct ? 'true' : 'false'}">
               <div class="flex items-center">
                 <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center mr-3 font-bold text-blue-600">
                   ${option.id.toUpperCase()}
@@ -82,7 +97,10 @@ function renderStep(index) {
 
   // クイズオプションにクリックイベント追加
   contentArea.querySelectorAll('.quiz-option').forEach(optionEl => {
-    optionEl.addEventListener('click', () => handleQuizAnswer(optionEl, step.quiz));
+    optionEl.addEventListener('click', () => {
+      console.log('クイズオプションがクリックされました:', optionEl.dataset.optionId);
+      handleQuizAnswer(optionEl, step.quiz);
+    });
   });
 
   // 進捗を「学習中」に更新
@@ -91,11 +109,24 @@ function renderStep(index) {
 
 // クイズ解答処理
 async function handleQuizAnswer(optionEl, quiz) {
-  if (quizAnswered) return;
+  console.log('handleQuizAnswer開始');
+  
+  if (quizAnswered) {
+    console.log('既に解答済み');
+    return;
+  }
 
   const optionId = optionEl.dataset.optionId;
+  const isCorrectStr = optionEl.dataset.isCorrect;
+  const isCorrect = isCorrectStr === 'true';
+  
+  console.log('選択されたオプション:', optionId, '正解:', isCorrect);
+  
   const selectedOption = quiz.options.find(opt => opt.id === optionId);
-  if (!selectedOption) return;
+  if (!selectedOption) {
+    console.error('オプションが見つかりません');
+    return;
+  }
 
   quizAnswered = true;
   optionEl.classList.add('selected');
@@ -106,7 +137,6 @@ async function handleQuizAnswer(optionEl, quiz) {
   });
 
   const feedbackArea = document.getElementById('quiz-feedback');
-  const isCorrect = selectedOption.correct || false;
 
   // 解答を保存
   await saveAnswer(
@@ -120,6 +150,7 @@ async function handleQuizAnswer(optionEl, quiz) {
 
   // フィードバック表示
   if (isCorrect) {
+    console.log('正解！');
     optionEl.classList.add('correct');
     feedbackArea.className = 'mt-6 p-4 bg-green-50 border-2 border-green-500 rounded-lg fade-in';
     feedbackArea.innerHTML = `
@@ -145,6 +176,7 @@ async function handleQuizAnswer(optionEl, quiz) {
     await updateProgress(MODULE_ID, graphSteps[currentStepIndex].id, 'completed');
 
   } else {
+    console.log('不正解');
     optionEl.classList.add('incorrect');
     feedbackArea.className = 'mt-6 p-4 bg-yellow-50 border-2 border-yellow-500 rounded-lg fade-in';
     feedbackArea.innerHTML = `
@@ -162,21 +194,25 @@ async function handleQuizAnswer(optionEl, quiz) {
 
     // リトライボタン
     document.getElementById('retry-btn')?.addEventListener('click', () => {
+      console.log('リトライボタンがクリックされました');
       quizAnswered = false;
       document.querySelectorAll('.quiz-option').forEach(el => {
         el.classList.remove('selected', 'incorrect');
         el.style.pointerEvents = 'auto';
       });
       feedbackArea.classList.add('hidden');
+      updateNavigationButtons();
     });
   }
 
   feedbackArea.classList.remove('hidden');
+  console.log('ナビゲーションボタン更新前 - quizAnswered:', quizAnswered);
   updateNavigationButtons();
 }
 
 // ステップ移動
 function goToStep(index) {
+  console.log('ステップ移動:', index);
   if (index < 0 || index >= graphSteps.length) return;
   currentStepIndex = index;
   renderStepNavigation();
@@ -187,21 +223,29 @@ function goToStep(index) {
 
 // ナビゲーションボタン更新
 function updateNavigationButtons() {
+  console.log('ナビゲーションボタン更新 - quizAnswered:', quizAnswered, 'currentStepIndex:', currentStepIndex);
+  
   const prevBtn = document.getElementById('prev-btn');
   const nextBtn = document.getElementById('next-btn');
   const completionMsg = document.getElementById('completion-message');
 
   if (prevBtn) {
     prevBtn.disabled = currentStepIndex === 0;
-    prevBtn.onclick = () => goToStep(currentStepIndex - 1);
+    prevBtn.onclick = () => {
+      console.log('前へボタンがクリックされました');
+      goToStep(currentStepIndex - 1);
+    };
   }
 
   if (nextBtn) {
     if (currentStepIndex === graphSteps.length - 1) {
+      // 最後のステップ
       if (quizAnswered) {
         nextBtn.textContent = '完了';
         nextBtn.innerHTML = '<i class="fas fa-check mr-2"></i>完了';
+        nextBtn.disabled = false;
         nextBtn.onclick = async () => {
+          console.log('完了ボタンがクリックされました');
           // モジュール完了を記録
           await addAchievement(
             'module_complete',
@@ -223,12 +267,18 @@ function updateNavigationButtons() {
         };
       } else {
         nextBtn.disabled = true;
+        nextBtn.innerHTML = '問題に答えてください';
       }
     } else {
-      nextBtn.textContent = '次へ';
+      // 途中のステップ
       nextBtn.innerHTML = '次へ<i class="fas fa-arrow-right ml-2"></i>';
       nextBtn.disabled = !quizAnswered;
-      nextBtn.onclick = () => goToStep(currentStepIndex + 1);
+      nextBtn.onclick = () => {
+        console.log('次へボタンがクリックされました');
+        goToStep(currentStepIndex + 1);
+      };
     }
   }
+  
+  console.log('ボタン状態 - 次へボタン無効:', nextBtn?.disabled);
 }
