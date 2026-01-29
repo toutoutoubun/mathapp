@@ -270,6 +270,48 @@ app.delete('/api/teacher/assignments/:id', async (c) => {
     return c.json({ success: true });
 });
 
+// 教師用プレビューデータ一括取得
+app.get('/api/teacher/preview-content', async (c) => {
+  const { DB } = c.env
+  const user = c.get('user')
+
+  // 1. セクション取得
+  const sectionsRes = await DB.prepare('SELECT * FROM sections WHERE teacher_id = ? ORDER BY created_at DESC').bind(user.id).all();
+  const sections = sectionsRes.results;
+
+  // 2. フェーズ取得
+  const phasesRes = await DB.prepare(`
+    SELECT p.* 
+    FROM phases p
+    JOIN sections s ON p.section_id = s.id
+    WHERE s.teacher_id = ?
+    ORDER BY p.order_index
+  `).bind(user.id).all();
+  const phases = phasesRes.results;
+
+  // 3. モジュール取得
+  const modulesRes = await DB.prepare(`
+    SELECT m.* 
+    FROM modules m
+    JOIN phases p ON m.phase_id = p.id
+    JOIN sections s ON p.section_id = s.id
+    WHERE s.teacher_id = ?
+    ORDER BY m.order_index
+  `).bind(user.id).all();
+  const modules = modulesRes.results;
+
+  // 階層構造の構築
+  const content = sections.map((s: any) => {
+    const sPhases = phases.filter((p: any) => p.section_id === s.id).map((p: any) => {
+        const pModules = modules.filter((m: any) => m.phase_id === p.id);
+        return { ...p, modules: pModules };
+    });
+    return { ...s, phases: sPhases };
+  });
+
+  return c.json({ content });
+});
+
 // セクション一覧取得（教師の作成したもののみ）
 app.get('/api/teacher/sections', async (c) => {
   const { DB } = c.env
@@ -720,6 +762,97 @@ app.get('/api/student/phase-progress', async (c) => {
   return c.json({ progress: phaseProgress })
 })
 
+// ==================== Q&A API Routes ====================
+
+// 生徒からの質問投稿
+app.post('/api/student/questions', async (c) => {
+  const { DB } = c.env
+  const user = c.get('user')
+  const { module_id, step_id, question_text } = await c.req.json()
+  
+  if (!user || user.role !== 'student') {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+
+  // モジュール作成者のTeacher IDを取得
+  const moduleInfo = await DB.prepare(`
+    SELECT s.teacher_id 
+    FROM modules m
+    JOIN phases p ON m.phase_id = p.id
+    JOIN sections s ON p.section_id = s.id
+    WHERE m.id = ?
+  `).bind(module_id).first()
+
+  if (!moduleInfo) {
+    return c.json({ error: 'Module not found' }, 404)
+  }
+
+  await DB.prepare(`
+    INSERT INTO student_questions (student_id, teacher_id, module_id, step_id, question_text)
+    VALUES (?, ?, ?, ?, ?)
+  `).bind(user.id, moduleInfo.teacher_id, module_id, step_id || null, question_text).run()
+
+  return c.json({ success: true })
+})
+
+// 教師用：質問一覧取得
+app.get('/api/teacher/questions', async (c) => {
+  const { DB } = c.env
+  const user = c.get('user')
+  
+  if (!user || user.role !== 'teacher') {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+
+  const result = await DB.prepare(`
+    SELECT q.*, u.username as student_name, m.name as module_name
+    FROM student_questions q
+    JOIN users u ON q.student_id = u.id
+    LEFT JOIN modules m ON q.module_id = m.id
+    WHERE q.teacher_id = ?
+    ORDER BY q.created_at DESC
+  `).bind(user.id).all()
+
+  return c.json({ questions: result.results })
+})
+
+// 教師用：未返信件数取得
+app.get('/api/teacher/questions/count', async (c) => {
+  const { DB } = c.env
+  const user = c.get('user')
+  
+  if (!user || user.role !== 'teacher') {
+    return c.json({ count: 0 })
+  }
+
+  const result = await DB.prepare(`
+    SELECT COUNT(*) as count FROM student_questions 
+    WHERE teacher_id = ? AND status = 'open'
+  `).bind(user.id).first()
+
+  return c.json({ count: result.count })
+})
+
+// 教師用：返信送信
+app.post('/api/teacher/questions/:id/reply', async (c) => {
+  const { DB } = c.env
+  const user = c.get('user')
+  const questionId = c.req.param('id')
+  const { reply_text } = await c.req.json()
+  
+  if (!user || user.role !== 'teacher') {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+
+  await DB.prepare(`
+    UPDATE student_questions 
+    SET reply_text = ?, status = 'replied', reply_at = CURRENT_TIMESTAMP
+    WHERE id = ? AND teacher_id = ?
+  `).bind(reply_text, questionId, user.id).run()
+
+  return c.json({ success: true })
+})
+
 // ログイン画面（教師用）
 app.get('/login', (c) => {
   return c.html(`
@@ -730,6 +863,7 @@ app.get('/login', (c) => {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>教師ログイン - 学習アプリ</title>
         <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     </head>
     <body class="bg-gray-100 min-h-screen flex items-center justify-center">
         <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md border-t-4 border-indigo-600">
@@ -767,17 +901,29 @@ app.get('/login', (c) => {
                     
                     if (res.ok) {
                         if (json.user.role !== 'teacher') {
-                            alert('生徒アカウントでは教師用画面にログインできません。\\n生徒用ログイン画面へ移動してください。');
+                            Swal.fire({
+                                icon: 'warning',
+                                title: 'アカウント間違い',
+                                text: '生徒アカウントでは教師用画面にログインできません。生徒用ログイン画面へ移動してください。'
+                            });
                             return;
                         }
                         localStorage.setItem('token', json.token);
                         localStorage.setItem('user', JSON.stringify(json.user));
                         window.location.href = '/teacher/sections';
                     } else {
-                        alert(json.error);
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'ログイン失敗',
+                            text: json.error
+                        });
                     }
                 } catch (e) {
-                    alert('エラーが発生しました');
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'エラー',
+                        text: 'エラーが発生しました'
+                    });
                 }
             });
         </script>
@@ -797,6 +943,7 @@ app.get('/student/login', (c) => {
         <title>生徒ログイン - 学習アプリ</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     </head>
     <body class="bg-blue-50 min-h-screen flex items-center justify-center">
         <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border-t-8 border-yellow-400">
@@ -832,26 +979,39 @@ app.get('/student/login', (c) => {
                 const data = Object.fromEntries(formData.entries());
                 
                 try {
-                    const res = await fetch('/api/auth/login', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(data)
+                    const res = await axios.post('/api/auth/login', {
+                        username: data.username,
+                        password: data.password
                     });
-                    const json = await res.json();
+                    const json = res.data;
                     
-                    if (res.ok) {
+                    if (res.status === 200) {
                         if (json.user.role !== 'student') {
-                            alert('教師アカウントでは生徒用画面にログインできません。\\n教師用ログイン画面へ移動してください。');
+                            Swal.fire({
+                                icon: 'warning',
+                                title: 'アカウント間違い',
+                                text: '教師アカウントでは生徒用画面にログインできません。教師用ログイン画面へ移動してください。'
+                            });
                             return;
                         }
                         localStorage.setItem('token', json.token);
                         localStorage.setItem('user', JSON.stringify(json.user));
                         window.location.href = '/student';
-                    } else {
-                        alert(json.error);
                     }
                 } catch (e) {
-                    alert('エラーが発生しました');
+                    if (e.response) {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'ログイン失敗',
+                            text: e.response.data.error || 'ログインに失敗しました'
+                        });
+                    } else {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'エラー',
+                            text: 'エラーが発生しました'
+                        });
+                    }
                 }
             });
         </script>
@@ -870,6 +1030,7 @@ app.get('/register', (c) => {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>教師登録 - 学習アプリ</title>
         <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     </head>
     <body class="bg-gray-100 min-h-screen flex items-center justify-center">
         <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
@@ -897,21 +1058,35 @@ app.get('/register', (c) => {
                 const data = Object.fromEntries(formData.entries());
                 
                 try {
-                    const res = await fetch('/api/auth/register', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(data)
+                    const res = await axios.post('/api/auth/register', {
+                        username: data.username,
+                        password: data.password,
+                        role: data.role
                     });
-                    const json = await res.json();
+                    const json = res.data;
                     
-                    if (res.ok) {
-                        alert('登録しました。ログインしてください。');
+                    if (res.status === 200) {
+                        await Swal.fire({
+                            icon: 'success',
+                            title: '登録完了',
+                            text: '登録しました。ログインしてください。'
+                        });
                         window.location.href = '/login';
-                    } else {
-                        alert(json.error);
                     }
                 } catch (e) {
-                    alert('エラーが発生しました');
+                    if (e.response) {
+                        Swal.fire({
+                            icon: 'error',
+                            title: '登録失敗',
+                            text: e.response.data.error || '登録に失敗しました'
+                        });
+                    } else {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'エラー',
+                            text: 'エラーが発生しました'
+                        });
+                    }
                 }
             });
         </script>
@@ -1005,6 +1180,13 @@ app.get('/teacher', (c) => {
                     </h1>
                     <div class="flex gap-4 items-center">
                         <span class="text-sm bg-white/20 px-3 py-1 rounded-full"><i class="fas fa-user mr-1"></i>先生モード</span>
+                        <a href="/teacher/students" class="relative px-4 py-2 bg-indigo-800 rounded-lg hover:bg-indigo-900 transition text-sm">
+                            <i class="fas fa-users mr-1"></i>生徒管理
+                            <span id="question-badge" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center hidden">0</span>
+                        </a>
+                        <a href="/teacher/preview" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-600 transition text-sm">
+                            <i class="fas fa-eye mr-1"></i>生徒プレビュー
+                        </a>
                         <a href="/" class="px-4 py-2 bg-indigo-800 rounded-lg hover:bg-indigo-900 transition text-sm">
                             <i class="fas fa-sign-out-alt mr-1"></i>ログアウト
                         </a>
@@ -1023,6 +1205,27 @@ app.get('/teacher', (c) => {
                 if (!token || user.role !== 'teacher') {
                     window.location.href = '/login';
                 }
+
+                // 通知バッジ更新 (定期実行)
+                function updateBadge() {
+                    fetch('/api/teacher/questions/count', {
+                        headers: { 'Authorization': 'Bearer ' + token }
+                    })
+                    .then(res => res.json())
+                    .then(data => {
+                        const badge = document.getElementById('question-badge');
+                        if (data.count > 0) {
+                            badge.textContent = data.count;
+                            badge.classList.remove('hidden');
+                        } else {
+                            badge.classList.add('hidden');
+                        }
+                    })
+                    .catch(err => console.error(err));
+                }
+                
+                updateBadge();
+                setInterval(updateBadge, 30000); // 30秒ごとに更新
             </script>
 
             <!-- ウェルカムセクション -->
@@ -1168,7 +1371,7 @@ app.get('/teacher', (c) => {
                         作成したコンテンツを確認
                     </p>
                     <div class="flex items-center text-green-600 font-semibold">
-                        生徒画面を見る
+                        プレビュー画面へ
                         <i class="fas fa-arrow-right ml-2"></i>
                     </div>
                 </a>
@@ -1191,10 +1394,11 @@ app.get('/teacher/preview', (c) => {
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
         <link href="/static/style.css" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     </head>
     <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
-        <!-- プレビュー用ナビゲーションバー -->
-        <nav class="bg-green-600 text-white shadow-md">
+        <!-- ナビゲーションバー -->
+        <nav class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg">
             <div class="max-w-7xl mx-auto px-4 py-4">
                 <div class="flex justify-between items-center">
                     <h1 class="text-2xl font-bold">
@@ -1206,7 +1410,7 @@ app.get('/teacher/preview', (c) => {
                             <option value="">学年を選択...</option>
                         </select>
                         <a href="/teacher" class="px-4 py-2 bg-white text-green-700 font-bold rounded-lg hover:bg-gray-100 transition">
-                            <i class="fas fa-sign-out-alt mr-2"></i>管理画面に戻る
+                            <i class="fas fa-home mr-2"></i>トップ
                         </a>
                     </div>
                 </div>
@@ -1257,9 +1461,9 @@ app.get('/teacher/preview', (c) => {
                 const sectionSelect = document.getElementById('section-select');
                 
                 try {
-                    // 1. セクション一覧取得 (教師用APIを使用することで全てのセクションが見える)
-                    const sectionsRes = await axios.get('/api/teacher/sections');
-                    const sections = sectionsRes.data.sections;
+                    // 1. 教師用プレビューデータ一括取得
+                    const sectionsRes = await axios.get('/api/teacher/preview-content');
+                    const sections = sectionsRes.data.content;
                     
                     if (sectionSelect) {
                         sectionSelect.innerHTML = '<option value="">すべての学年</option>' + 
@@ -1288,15 +1492,11 @@ app.get('/teacher/preview', (c) => {
                     let hasContent = false;
                     const cardsHtml = [];
 
-                    for (const section of sections) {
-                        const phasesRes = await axios.get('/api/teacher/phases?section_id=' + section.id);
-                        const phases = phasesRes.data.phases;
-
-                        for (const phase of phases) {
-                            const modulesRes = await axios.get('/api/teacher/modules?phase_id=' + phase.id);
-                            const modules = modulesRes.data.modules;
-
-                            modules.forEach(module => {
+                    sections.forEach(section => {
+                        if (section.phases && section.phases.length > 0) {
+                            section.phases.forEach(phase => {
+                                if (phase.modules && phase.modules.length > 0) {
+                                    phase.modules.forEach(module => {
                                 hasContent = true;
                                 const colorClass = module.color ? \`from-\${module.color}-100 to-\${module.color}-200\` : 'from-indigo-100 to-purple-200';
                                 
@@ -1317,9 +1517,11 @@ app.get('/teacher/preview', (c) => {
                                         </div>
                                     </a>
                                 \`);
+                                    });
+                                }
                             });
                         }
-                    }
+                    });
                     
                     if (!hasContent) {
                         container.innerHTML = \`
@@ -1358,6 +1560,7 @@ app.get('/student', (c) => {
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
         <link href="/static/style.css" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     </head>
     <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
         <!-- ナビゲーションバー -->
@@ -1378,6 +1581,9 @@ app.get('/student', (c) => {
                         </a>
                         <a href="/student/glossary" class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition">
                             <i class="fas fa-book mr-2"></i>用語集
+                        </a>
+                        <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
+                            <i class="fas fa-sign-out-alt mr-2"></i>ログアウト
                         </a>
                     </div>
                 </div>
@@ -1450,18 +1656,18 @@ app.get('/student', (c) => {
                         try {
                             const res = await axios.post('/api/student/join', { access_code: code });
                             if (res.data.success) {
-                                alert(\`「\${res.data.section.name}」に参加しました！\`);
+                                await Swal.fire({ icon: 'success', title: '参加しました！', text: \`「\${res.data.section.name}」に参加しました！\` });
                                 window.location.reload();
                             }
                         } catch(e) {
                             if (e.response && e.response.status === 404) {
-                                alert('無効なコードです');
+                                Swal.fire({ icon: 'error', title: 'エラー', text: '無効なコードです' });
                             } else if (e.response && e.response.status === 400) {
-                                alert(e.response.data.error || '既に参加済みのクラスです');
+                                Swal.fire({ icon: 'info', title: '参加済み', text: e.response.data.error || '既に参加済みのクラスです' });
                             } else if (e.response && e.response.status === 401) {
                                 window.location.href = '/login';
                             } else {
-                                alert('エラーが発生しました');
+                                Swal.fire({ icon: 'error', title: 'エラー', text: 'エラーが発生しました' });
                             }
                         }
                     });
@@ -1639,6 +1845,7 @@ app.get('/student/modules/:id', async (c) => {
         <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <script src="https://unpkg.com/function-plot/dist/function-plot.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
         <script>
           window.MathJax = {
             tex: { inlineMath: [['$', '$'], ['\\\\(', '\\\\)']] }
@@ -1657,9 +1864,14 @@ app.get('/student/modules/:id', async (c) => {
                         <i class="fas fa-graduation-cap mr-2"></i>
                         ${module.name}
                     </h1>
-                    <a href="${homeLink}" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
-                        <i class="fas fa-home mr-2"></i>${homeText}
-                    </a>
+                    <div class="flex items-center gap-3">
+                        <button id="question-btn" class="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition shadow-sm">
+                            <i class="fas fa-question-circle mr-2"></i>先生に質問する
+                        </button>
+                        <a href="${homeLink}" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
+                            <i class="fas fa-home mr-2"></i>${homeText}
+                        </a>
+                    </div>
                 </div>
             </div>
         </nav>
@@ -1696,14 +1908,156 @@ app.get('/student/modules/:id', async (c) => {
               window.location.href = '/login';
           }
             const MODULE_ID = ${moduleId};
+            const IS_PREVIEW = ${isPreview ? 'true' : 'false'};
             let steps = [];
             let currentStepIndex = 0;
+            let currentStep = null;
+            let cachedUser = null;
 
             document.addEventListener('DOMContentLoaded', async () => {
+                cachedUser = getCurrentUser();
+                initializeQuestionButton();
                 await loadSteps();
             });
 
+            function getCurrentUser() {
+                const raw = localStorage.getItem('user');
+                if (!raw) return null;
+                try {
+                    return JSON.parse(raw);
+                } catch (e) {
+                    return null;
+                }
+            }
+
+            function initializeQuestionButton() {
+                const btn = document.getElementById('question-btn');
+                if (!btn) return;
+
+                btn.removeAttribute('disabled');
+                btn.classList.remove('opacity-60', 'cursor-not-allowed');
+                btn.title = '';
+
+                if (IS_PREVIEW) {
+                    btn.disabled = true;
+                    btn.classList.add('opacity-60', 'cursor-not-allowed');
+                    btn.title = 'プレビュー中は質問を送信できません';
+                    return;
+                }
+
+                if (!cachedUser || cachedUser.role !== 'student') {
+                    btn.disabled = true;
+                    btn.classList.add('opacity-60', 'cursor-not-allowed');
+                    btn.title = '生徒アカウントでログインすると質問できます';
+                    return;
+                }
+
+                if (btn.dataset.bound === 'true') return;
+                btn.addEventListener('click', handleQuestionClick);
+                btn.dataset.bound = 'true';
+            }
+
+            function sanitizeHtml(str) {
+                if (!str) return '';
+                return str
+                    .replace(/&/g, '&amp;')
+                    .replace(/</g, '&lt;')
+                    .replace(/>/g, '&gt;')
+                    .replace(/"/g, '&quot;')
+                    .replace(/'/g, '&#39;');
+            }
+
+            async function handleQuestionClick() {
+                cachedUser = getCurrentUser();
+                if (!cachedUser || cachedUser.role !== 'student') {
+                    Swal.fire({
+                        icon: 'info',
+                        title: '質問できません',
+                        text: '生徒アカウントでログインしてください。'
+                    });
+                    return;
+                }
+
+                if (!currentStep) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'ステップを読み込み中',
+                        text: 'ステップの表示が完了してから質問してください。'
+                    });
+                    return;
+                }
+
+                const helperHtml = '<div class="text-left text-sm text-gray-600 mb-2">現在のステップ: ' + sanitizeHtml(currentStep.title || '（不明）') + '</div>';
+
+                const { value: questionText, isConfirmed } = await Swal.fire({
+                    title: '先生に質問する',
+                    input: 'textarea',
+                    inputLabel: '質問内容',
+                    inputPlaceholder: '例）この計算の途中式がわかりません。',
+                    inputAttributes: {
+                        maxlength: 500,
+                        'aria-label': '質問内容'
+                    },
+                    html: helperHtml,
+                    showCancelButton: true,
+                    confirmButtonText: '送信',
+                    cancelButtonText: 'キャンセル',
+                    focusConfirm: false,
+                    inputValidator: (value) => {
+                        if (!value || !value.trim()) {
+                            return '質問内容を入力してください';
+                        }
+                        return null;
+                    }
+                });
+
+                if (!isConfirmed || !questionText) {
+                    return;
+                }
+
+                const trimmed = questionText.trim();
+
+                try {
+                    Swal.fire({
+                        title: '送信中...',
+                        allowOutsideClick: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        }
+                    });
+
+                    await axios.post('/api/student/questions', {
+                        module_id: MODULE_ID,
+                        step_id: currentStep ? currentStep.id : null,
+                        question_text: trimmed
+                    });
+
+                    Swal.fire({
+                        icon: 'success',
+                        title: '送信しました',
+                        text: '先生からの返信を待ちましょう。'
+                    });
+                } catch (e) {
+                    if (e.response && e.response.status === 401) {
+                        Swal.fire({
+                            icon: 'error',
+                            title: '未ログイン',
+                            text: '再度ログインしてください。'
+                        }).then(() => {
+                            window.location.href = '/login';
+                        });
+                    } else {
+                        Swal.fire({
+                            icon: 'error',
+                            title: '送信に失敗しました',
+                            text: '時間をおいて再度お試しください。'
+                        });
+                    }
+                }
+            }
+
             async function loadSteps() {
+                currentStep = null;
                 try {
                     const res = await axios.get('/api/student/steps?module_id=' + MODULE_ID);
                     steps = res.data.steps;
@@ -1717,7 +2071,7 @@ app.get('/student/modules/:id', async (c) => {
                     loadStepContent(0);
                 } catch (e) {
                     console.error(e);
-                    alert('データの読み込みに失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: 'データの読み込みに失敗しました' });
                 }
             }
 
@@ -1735,6 +2089,7 @@ app.get('/student/modules/:id', async (c) => {
             async function loadStepContent(index) {
                 currentStepIndex = index;
                 const step = steps[index];
+                currentStep = step || null;
                 
                 document.querySelectorAll('.step-btn').forEach(btn => {
                     if (parseInt(btn.dataset.index) === index) {
@@ -1979,6 +2334,24 @@ app.get('/student/modules/:id', async (c) => {
 })
 
 // ==================== Teacher Admin API Routes ====================
+
+// 生徒の質問一覧取得 (教師用)
+app.get('/api/teacher/student-questions', async (c) => {
+  const { DB } = c.env
+  const user = c.get('user')
+  
+  const result = await DB.prepare(`
+    SELECT q.*, u.username as student_name, m.name as module_name, s.title as step_title
+    FROM student_questions q
+    JOIN users u ON q.student_id = u.id
+    LEFT JOIN modules m ON q.module_id = m.id
+    LEFT JOIN steps s ON q.step_id = s.id
+    WHERE q.teacher_id = ?
+    ORDER BY q.created_at DESC
+  `).bind(user.id).all()
+
+  return c.json({ questions: result.results })
+})
 
 // フェーズ一覧取得
 app.get('/api/teacher/phases', async (c) => {
@@ -2239,8 +2612,8 @@ app.put('/api/teacher/content-blocks/:id', async (c) => {
   return c.json({ success: true })
 })
 
-// 問題一覧取得
-app.get('/api/teacher/questions', async (c) => {
+// 問題一覧取得（重複を避けるためエンドポイントを変更）
+app.get('/api/teacher/step-questions', async (c) => {
   const { DB } = c.env
   const step_id = c.req.query('step_id')
   
@@ -2346,21 +2719,23 @@ app.get('/teacher/sections', (c) => {
         <title>セクション管理 - 学習アプリ開発プラットフォーム</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     </head>
     <body class="bg-gray-50 min-h-screen">
+        <!-- ナビゲーションバー -->
         <nav class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg">
             <div class="max-w-7xl mx-auto px-4 py-4">
                 <div class="flex justify-between items-center">
                     <h1 class="text-2xl font-bold">
-                        <i class="fas fa-book-open mr-2"></i>
+                        <i class="fas fa-book mr-2"></i>
                         セクション管理（学年単位）
                     </h1>
                     <div class="flex gap-4">
                         <a href="/teacher" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
                             <i class="fas fa-arrow-left mr-2"></i>トップへ戻る
                         </a>
-                        <a href="/student" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-400 transition">
-                            <i class="fas fa-user-graduate mr-2"></i>生徒画面
+                        <a href="/teacher/preview" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-400 transition">
+                            <i class="fas fa-eye mr-2"></i>生徒画面
                         </a>
                     </div>
                 </div>
@@ -2514,17 +2889,17 @@ app.get('/teacher/sections', (c) => {
               if (id) {
                   // 更新
                   await axios.put('/api/teacher/sections/' + id, data);
-                  alert('セクションを更新しました！');
+                  Swal.fire({ icon: 'success', title: '更新完了', text: 'セクションを更新しました！' });
               } else {
                   // 作成
                   await axios.post('/api/teacher/sections', data);
-                  alert('セクションを作成しました！');
+                  Swal.fire({ icon: 'success', title: '作成完了', text: 'セクションを作成しました！' });
               }
               resetForm();
               loadSections();
             } catch (error) {
               console.error('エラー:', error);
-              alert('エラーが発生しました');
+              Swal.fire({ icon: 'error', title: 'エラー', text: 'エラーが発生しました' });
             }
           });
           
@@ -2565,11 +2940,11 @@ app.get('/teacher/sections', (c) => {
             }
             try {
                 await axios.delete('/api/teacher/sections/' + id);
-                alert('削除しました');
+                Swal.fire({ icon: 'success', title: '削除完了', text: '削除しました' });
                 loadSections();
             } catch(e) {
                 console.error(e);
-                alert('削除に失敗しました');
+                Swal.fire({ icon: 'error', title: 'エラー', text: '削除に失敗しました' });
             }
           }
           
@@ -2594,8 +2969,10 @@ app.get('/teacher/phases', (c) => {
         <title>フェーズ管理 - 学習アプリ開発プラットフォーム</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     </head>
     <body class="bg-gray-50 min-h-screen">
+        <!-- ナビゲーションバー -->
         <nav class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg">
             <div class="max-w-7xl mx-auto px-4 py-4">
                 <div class="flex justify-between items-center">
@@ -2603,12 +2980,15 @@ app.get('/teacher/phases', (c) => {
                         <i class="fas fa-layer-group mr-2"></i>
                         フェーズ管理（大単元）
                     </h1>
-                    <div class="flex gap-4">
+                    <div class="flex gap-4 items-center">
                         <a href="/teacher/sections" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
                             <i class="fas fa-arrow-left mr-2"></i>セクション管理へ
                         </a>
                         <a href="/teacher" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
                             <i class="fas fa-home mr-2"></i>トップ
+                        </a>
+                        <a href="/teacher/preview" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-400 transition text-sm">
+                            <i class="fas fa-eye mr-1"></i>プレビュー
                         </a>
                     </div>
                 </div>
@@ -2773,7 +3153,7 @@ app.get('/teacher/phases', (c) => {
             const id = document.getElementById('edit-id').value;
             
             if (!sectionId) {
-              alert('まずセクションを選択してください');
+              Swal.fire({ icon: 'info', title: '確認', text: 'まずセクションを選択してください' });
               return;
             }
             
@@ -2789,17 +3169,17 @@ app.get('/teacher/phases', (c) => {
               if (id) {
                   // 更新
                   await axios.put('/api/teacher/phases/' + id, data);
-                  alert('フェーズを更新しました！');
+                  Swal.fire({ icon: 'success', title: '更新完了', text: 'フェーズを更新しました！' });
               } else {
                   // 作成
                   await axios.post('/api/teacher/phases', data);
-                  alert('フェーズを作成しました！');
+                  Swal.fire({ icon: 'success', title: '作成完了', text: 'フェーズを作成しました！' });
               }
               resetForm();
               loadPhases(sectionId);
             } catch (error) {
               console.error('エラー:', error);
-              alert('エラーが発生しました');
+              Swal.fire({ icon: 'error', title: 'エラー', text: 'エラーが発生しました' });
             }
           });
           
@@ -2840,12 +3220,12 @@ app.get('/teacher/phases', (c) => {
             }
             try {
                 await axios.delete('/api/teacher/phases/' + id);
-                alert('削除しました');
+                Swal.fire({ icon: 'success', title: '削除完了', text: '削除しました' });
                 const sectionId = document.getElementById('section-select').value;
                 if(sectionId) loadPhases(sectionId);
             } catch(e) {
                 console.error(e);
-                alert('削除に失敗しました');
+                Swal.fire({ icon: 'error', title: 'エラー', text: '削除に失敗しました' });
             }
           }
           
@@ -2869,8 +3249,10 @@ app.get('/teacher/modules', (c) => {
         <title>モジュール管理 - 学習アプリ開発プラットフォーム</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     </head>
     <body class="bg-gray-50 min-h-screen">
+        <!-- ナビゲーションバー -->
         <nav class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg">
             <div class="max-w-7xl mx-auto px-4 py-4">
                 <div class="flex justify-between items-center">
@@ -2878,12 +3260,15 @@ app.get('/teacher/modules', (c) => {
                         <i class="fas fa-book mr-2"></i>
                         モジュール管理（中単元）
                     </h1>
-                    <div class="flex gap-4">
+                    <div class="flex gap-4 items-center">
                         <a href="/teacher/phases" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
                             <i class="fas fa-arrow-left mr-2"></i>フェーズ管理へ
                         </a>
                         <a href="/teacher" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
-                            <i class="fas fa-home mr-2"></i>ホーム
+                            <i class="fas fa-home mr-2"></i>トップ
+                        </a>
+                        <a href="/teacher/preview" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-400 transition text-sm">
+                            <i class="fas fa-eye mr-1"></i>プレビュー
                         </a>
                     </div>
                 </div>
@@ -3134,12 +3519,12 @@ app.get('/teacher/modules', (c) => {
             
             try {
               await axios.post('/api/teacher/modules', data);
-              alert('モジュールを作成しました！');
+              Swal.fire({ icon: 'success', title: '作成完了', text: 'モジュールを作成しました！' });
               e.target.reset();
               loadModules(phaseId);
             } catch (error) {
               console.error('モジュール作成エラー:', error);
-              alert('エラーが発生しました');
+              Swal.fire({ icon: 'error', title: 'エラー', text: 'エラーが発生しました' });
             }
           });
           
@@ -3172,8 +3557,10 @@ app.get('/teacher/steps', (c) => {
         <title>ステップ管理 - 学習アプリ開発プラットフォーム</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     </head>
     <body class="bg-gray-50 min-h-screen">
+        <!-- ナビゲーションバー -->
         <nav class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg">
             <div class="max-w-7xl mx-auto px-4 py-4">
                 <div class="flex justify-between items-center">
@@ -3181,12 +3568,15 @@ app.get('/teacher/steps', (c) => {
                         <i class="fas fa-tasks mr-2"></i>
                         ステップ管理
                     </h1>
-                    <div class="flex gap-4">
+                    <div class="flex gap-4 items-center">
                         <a href="/teacher/modules" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
                             <i class="fas fa-arrow-left mr-2"></i>モジュール管理へ
                         </a>
                         <a href="/teacher" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
                             <i class="fas fa-home mr-2"></i>トップ
+                        </a>
+                        <a href="/teacher/preview" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-400 transition text-sm">
+                            <i class="fas fa-eye mr-1"></i>プレビュー
                         </a>
                     </div>
                 </div>
@@ -3436,12 +3826,12 @@ app.get('/teacher/steps', (c) => {
             
             try {
               await axios.post('/api/teacher/steps', data);
-              alert('ステップを作成しました！');
+              Swal.fire({ icon: 'success', title: '作成完了', text: 'ステップを作成しました！' });
               e.target.reset();
               loadSteps(moduleId);
             } catch (error) {
               console.error('ステップ作成エラー:', error);
-              alert('エラーが発生しました');
+              Swal.fire({ icon: 'error', title: 'エラー', text: 'エラーが発生しました' });
             }
           });
           
@@ -3466,11 +3856,11 @@ app.get('/teacher/steps', (c) => {
                     order_index: parseInt(newOrder)
                 });
                 
-                alert('更新しました');
+                Swal.fire({ icon: 'success', title: '更新完了', text: '更新しました' });
                 loadSteps(step.module_id);
             } catch(e) {
                 console.error(e);
-                alert('更新に失敗しました');
+                Swal.fire({ icon: 'error', title: 'エラー', text: '更新に失敗しました' });
             }
           }
           
@@ -3481,12 +3871,12 @@ app.get('/teacher/steps', (c) => {
             }
             try {
                 await axios.delete('/api/teacher/steps/' + id);
-                alert('削除しました');
+                Swal.fire({ icon: 'success', title: '削除完了', text: '削除しました' });
                 const moduleId = document.getElementById('module-select').value;
                 if(moduleId) loadSteps(moduleId);
             } catch(e) {
                 console.error(e);
-                alert('削除に失敗しました');
+                Swal.fire({ icon: 'error', title: 'エラー', text: '削除に失敗しました' });
             }
           }
           
@@ -3516,6 +3906,7 @@ app.get('/teacher/content', (c) => {
         <!-- Function Plot -->
         <script src="https://unpkg.com/function-plot/dist/function-plot.js"></script>
         <!-- MathJax -->
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
         <script>
           window.MathJax = {
             tex: { inlineMath: [['$', '$'], ['\\\\(', '\\\\)']] }
@@ -3529,6 +3920,7 @@ app.get('/teacher/content', (c) => {
         </style>
     </head>
     <body class="bg-gray-50 min-h-screen">
+        <!-- ナビゲーションバー -->
         <nav class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg">
             <div class="max-w-7xl mx-auto px-4 py-4">
                 <div class="flex justify-between items-center">
@@ -3536,12 +3928,15 @@ app.get('/teacher/content', (c) => {
                         <i class="fas fa-edit mr-2"></i>
                         コンテンツ作成
                     </h1>
-                    <div class="flex gap-4">
+                    <div class="flex gap-4 items-center">
                         <a href="/teacher/steps" class="px-4 py-2 bg-blue-500 rounded-lg hover:bg-blue-400 transition">
                             <i class="fas fa-arrow-left mr-2"></i>ステップ管理へ
                         </a>
                         <a href="/teacher" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
                             <i class="fas fa-home mr-2"></i>トップ
+                        </a>
+                        <a href="/teacher/preview" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-400 transition text-sm">
+                            <i class="fas fa-eye mr-1"></i>プレビュー
                         </a>
                     </div>
                 </div>
@@ -3827,7 +4222,7 @@ app.get('/teacher/content', (c) => {
                     renderEditor();
                 } catch(e) {
                     console.error(e);
-                    alert('コンテンツの読み込みに失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: 'コンテンツの読み込みに失敗しました' });
                 }
             }
 
@@ -4529,7 +4924,7 @@ app.get('/teacher/content', (c) => {
                     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
                 } catch(e) {
                     console.error(e);
-                    alert('追加に失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: '追加に失敗しました' });
                 }
             }
 
@@ -4602,7 +4997,7 @@ app.get('/teacher/content', (c) => {
                     }
                 } catch(e) {
                     console.error(e);
-                    alert('保存に失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: '保存に失敗しました' });
                 }
             }
 
@@ -4618,7 +5013,7 @@ app.get('/teacher/content', (c) => {
                     const el = btnElement.closest('.content-block');
                     if(el) el.remove();
                 } catch(e) {
-                    alert('削除に失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: '削除に失敗しました' });
                 }
             }
 
@@ -4632,7 +5027,7 @@ app.get('/teacher/content', (c) => {
                     const el = btnElement.closest('.content-block');
                     if(el) el.remove();
                 } catch(e) {
-                    alert('削除に失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: '削除に失敗しました' });
                 }
             }
 
@@ -4678,7 +5073,7 @@ app.get('/teacher/content', (c) => {
 
                 } catch(e) {
                     console.error(e);
-                    alert('追加に失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: '追加に失敗しました' });
                 }
             }
 
@@ -4687,7 +5082,7 @@ app.get('/teacher/content', (c) => {
                 try {
                     await axios.put(\`/api/teacher/questions/\${id}\`, { question_text: text });
                 } catch(e) {
-                    alert('保存に失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: '保存に失敗しました' });
                 }
             }
 
@@ -4716,7 +5111,7 @@ app.get('/teacher/content', (c) => {
                     container.insertBefore(div.firstElementChild, btn);
                     
                 } catch(e) {
-                    alert('追加に失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: '追加に失敗しました' });
                 }
             }
 
@@ -4731,7 +5126,7 @@ app.get('/teacher/content', (c) => {
                     });
                     loadContent(currentStepId, document.getElementById('current-step-title').textContent);
                 } catch(e) {
-                    alert('保存に失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: '保存に失敗しました' });
                 }
             }
 
@@ -4777,7 +5172,7 @@ app.get('/teacher/content', (c) => {
                         loadContent(currentStepId, document.getElementById('current-step-title').textContent);
                     }
                 } catch(e) {
-                    alert('保存に失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: '保存に失敗しました' });
                 }
             }
 
@@ -4789,7 +5184,7 @@ app.get('/teacher/content', (c) => {
                     await axios.delete(\`/api/teacher/question-options/\${id}\`);
                     loadContent(currentStepId, document.getElementById('current-step-title').textContent);
                 } catch(e) {
-                    alert('削除に失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: '削除に失敗しました' });
                 }
             }
 
@@ -5046,7 +5441,7 @@ app.get('/teacher/students', (c) => {
                         alert('生徒コードを発行しました！\\n\\n生徒コード: ' + res.data.username + '\\n初期パスワード: ' + res.data.password + '\\n\\nこの情報を控えて生徒に伝えてください。');
                         loadData();
                     } catch(e) {
-                        alert('発行に失敗しました');
+                        Swal.fire({ icon: 'error', title: 'エラー', text: '発行に失敗しました' });
                     }
                 });
 
@@ -5054,13 +5449,13 @@ app.get('/teacher/students', (c) => {
                     const codeInput = document.getElementById('existing-student-code');
                     const code = codeInput.value.trim();
                     if (!code) {
-                        alert('生徒コードを入力してください');
+                        Swal.fire({ icon: 'warning', title: '入力エラー', text: '生徒コードを入力してください' });
                         return;
                     }
 
                     try {
                         await axios.post('/api/teacher/students/link', { username: code });
-                        alert('生徒を追加しました！');
+                        Swal.fire({ icon: 'success', title: '追加完了', text: '生徒を追加しました！' });
                         codeInput.value = '';
                         loadData();
                     } catch(e) {
@@ -5126,7 +5521,7 @@ app.get('/teacher/students', (c) => {
                     await axios.put('/api/teacher/students/' + id, { memo });
                 } catch(e) {
                     console.error(e);
-                    alert('メモの保存に失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: 'メモの保存に失敗しました' });
                 }
             };
 
@@ -5137,7 +5532,7 @@ app.get('/teacher/students', (c) => {
                     loadData();
                 } catch(e) {
                     console.error(e);
-                    alert('削除に失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: '削除に失敗しました' });
                 }
             };
 
@@ -5194,7 +5589,7 @@ app.get('/teacher/students', (c) => {
                     assignments = res.data.assignments;
                     
                 } catch(e) {
-                    alert('設定の保存に失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: '設定の保存に失敗しました' });
                 }
             }
 
@@ -5418,15 +5813,15 @@ app.get('/teacher/glossary', (c) => {
                     try {
                         if (id) {
                             await axios.put('/api/teacher/glossary/' + id, data);
-                            alert('更新しました');
+                            Swal.fire({ icon: 'success', title: '更新完了', text: '更新しました' });
                         } else {
                             await axios.post('/api/teacher/glossary', data);
-                            alert('登録しました');
+                            Swal.fire({ icon: 'success', title: '登録完了', text: '登録しました' });
                         }
                         resetForm();
                         loadGlossary();
                     } catch(e) {
-                        alert('エラーが発生しました');
+                        Swal.fire({ icon: 'error', title: 'エラー', text: 'エラーが発生しました' });
                     }
                 });
                 
@@ -5498,7 +5893,7 @@ app.get('/teacher/glossary', (c) => {
                     await axios.delete('/api/teacher/glossary/' + id);
                     loadGlossary();
                 } catch(e) {
-                    alert('削除に失敗しました');
+                    Swal.fire({ icon: 'error', title: 'エラー', text: '削除に失敗しました' });
                 }
             };
 
