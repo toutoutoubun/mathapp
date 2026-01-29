@@ -21,29 +21,45 @@ app.use('/static/*', serveStatic({ root: './' }))
 
 // ログイン
 app.post('/api/auth/login', async (c) => {
-  const { DB } = c.env
-  let { username, password } = await c.req.json()
-  
-  // 入力の正規化（空白除去）
-  if (typeof username === 'string') username = username.trim();
-  if (typeof password === 'string') password = password.trim();
-  
-  // ユーザー名は大小文字区別なし、パスワードは区別あり
-  const user = await DB.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE AND password = ?').bind(username, password).first()
-  
-  if (!user) {
-    return c.json({ error: 'ユーザー名またはパスワードが間違っています' }, 401)
+  try {
+    const { DB } = c.env
+    let body;
+    try {
+        body = await c.req.json();
+    } catch {
+        return c.json({ error: '無効なリクエスト形式です' }, 400);
+    }
+    
+    let { username, password } = body;
+    
+    if (!username || !password) {
+        return c.json({ error: 'ユーザー名とパスワードを入力してください' }, 400);
+    }
+    
+    // 入力の正規化（空白除去）
+    if (typeof username === 'string') username = username.trim();
+    if (typeof password === 'string') password = password.trim();
+    
+    // ユーザー名は大小文字区別なし、パスワードは区別あり
+    const user = await DB.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE AND password = ?').bind(username, password).first()
+    
+    if (!user) {
+      return c.json({ error: 'ユーザー名またはパスワードが間違っています' }, 401)
+    }
+    
+    const payload = {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+      exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 // 1 week
+    }
+    
+    const token = await sign(payload, JWT_SECRET, 'HS256')
+    return c.json({ token, user: { id: user.id, username: user.username, role: user.role } })
+  } catch (e) {
+    console.error('Login Error:', e);
+    return c.json({ error: 'ログイン処理中にエラーが発生しました' }, 500);
   }
-  
-  const payload = {
-    id: user.id,
-    username: user.username,
-    role: user.role,
-    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 // 1 week
-  }
-  
-  const token = await sign(payload, JWT_SECRET, 'HS256')
-  return c.json({ token, user: { id: user.id, username: user.username, role: user.role } })
 })
 
 // 登録（教師用）
@@ -281,44 +297,49 @@ app.delete('/api/teacher/assignments/:id', async (c) => {
 
 // 教師用プレビューデータ一括取得
 app.get('/api/teacher/preview-content', async (c) => {
-  const { DB } = c.env
-  const user = c.get('user')
+  try {
+    const { DB } = c.env
+    const user = c.get('user')
 
-  // 1. セクション取得
-  const sectionsRes = await DB.prepare('SELECT * FROM sections WHERE teacher_id = ? ORDER BY created_at DESC').bind(user.id).all();
-  const sections = sectionsRes.results;
+    // 1. セクション取得
+    const sectionsRes = await DB.prepare('SELECT * FROM sections WHERE teacher_id = ? ORDER BY created_at DESC').bind(user.id).all();
+    const sections = sectionsRes.results;
 
-  // 2. フェーズ取得
-  const phasesRes = await DB.prepare(`
-    SELECT p.* 
-    FROM phases p
-    JOIN sections s ON p.section_id = s.id
-    WHERE s.teacher_id = ?
-    ORDER BY p.order_index
-  `).bind(user.id).all();
-  const phases = phasesRes.results;
+    // 2. フェーズ取得
+    const phasesRes = await DB.prepare(`
+      SELECT p.* 
+      FROM phases p
+      JOIN sections s ON p.section_id = s.id
+      WHERE s.teacher_id = ?
+      ORDER BY p.order_index
+    `).bind(user.id).all();
+    const phases = phasesRes.results;
 
-  // 3. モジュール取得
-  const modulesRes = await DB.prepare(`
-    SELECT m.* 
-    FROM modules m
-    JOIN phases p ON m.phase_id = p.id
-    JOIN sections s ON p.section_id = s.id
-    WHERE s.teacher_id = ?
-    ORDER BY m.order_index
-  `).bind(user.id).all();
-  const modules = modulesRes.results;
+    // 3. モジュール取得
+    const modulesRes = await DB.prepare(`
+      SELECT m.* 
+      FROM modules m
+      JOIN phases p ON m.phase_id = p.id
+      JOIN sections s ON p.section_id = s.id
+      WHERE s.teacher_id = ?
+      ORDER BY m.order_index
+    `).bind(user.id).all();
+    const modules = modulesRes.results;
 
-  // 階層構造の構築
-  const content = sections.map((s: any) => {
-    const sPhases = phases.filter((p: any) => p.section_id === s.id).map((p: any) => {
-        const pModules = modules.filter((m: any) => m.phase_id === p.id);
-        return { ...p, modules: pModules };
+    // 階層構造の構築
+    const content = sections.map((s: any) => {
+      const sPhases = phases.filter((p: any) => p.section_id === s.id).map((p: any) => {
+          const pModules = modules.filter((m: any) => m.phase_id === p.id);
+          return { ...p, modules: pModules };
+      });
+      return { ...s, phases: sPhases };
     });
-    return { ...s, phases: sPhases };
-  });
 
-  return c.json({ content });
+    return c.json({ content });
+  } catch(e) {
+    console.error('Preview Content Error:', e);
+    return c.json({ error: 'プレビューデータの取得に失敗しました' }, 500);
+  }
 });
 
 // セクション一覧取得（教師の作成したもののみ）
