@@ -22,9 +22,14 @@ app.use('/static/*', serveStatic({ root: './' }))
 // ログイン
 app.post('/api/auth/login', async (c) => {
   const { DB } = c.env
-  const { username, password } = await c.req.json()
+  let { username, password } = await c.req.json()
   
-  const user = await DB.prepare('SELECT * FROM users WHERE username = ? AND password = ?').bind(username, password).first()
+  // 入力の正規化（空白除去）
+  if (typeof username === 'string') username = username.trim();
+  if (typeof password === 'string') password = password.trim();
+  
+  // ユーザー名は大小文字区別なし、パスワードは区別あり
+  const user = await DB.prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE AND password = ?').bind(username, password).first()
   
   if (!user) {
     return c.json({ error: 'ユーザー名またはパスワードが間違っています' }, 401)
@@ -122,6 +127,10 @@ app.post('/api/teacher/students', async (c) => {
     const { DB } = c.env;
     const user = c.get('user'); // 教師情報
     let { username, password } = await c.req.json();
+    
+    // 入力の正規化
+    if (username && typeof username === 'string') username = username.trim();
+    if (password && typeof password === 'string') password = password.trim();
     
     // 自動生成ロジック
     if (!username) {
