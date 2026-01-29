@@ -203,6 +203,36 @@ app.post('/api/teacher/students/link', async (c) => {
     return c.json({ success: true, student });
 });
 
+// 教師が生徒になりすますためのトークン発行
+app.post('/api/teacher/students/:id/impersonate', async (c) => {
+  const { DB } = c.env
+  const user = c.get('user')
+  const studentId = c.req.param('id')
+
+  // 生徒がこの教師に紐付いているか確認
+  const student = await DB.prepare(`
+    SELECT u.* FROM users u
+    JOIN teacher_students ts ON u.id = ts.student_id
+    WHERE u.id = ? AND ts.teacher_id = ?
+  `).bind(studentId, user.id).first()
+
+  if (!student) {
+    return c.json({ error: 'Student not found or not linked to you' }, 404)
+  }
+
+  // 生徒用トークン生成
+  const payload = {
+    id: student.id,
+    username: student.username,
+    role: 'student',
+    exp: Math.floor(Date.now() / 1000) + 60 * 60, // 1時間有効
+    impersonator_id: user.id
+  }
+
+  const token = await sign(payload, JWT_SECRET, 'HS256')
+  return c.json({ token, user: { id: student.id, username: student.username, role: 'student' } })
+})
+
 // 生徒一覧取得
 app.get('/api/teacher/students', async (c) => {
     const { DB } = c.env;
@@ -1701,6 +1731,28 @@ app.get('/student', (c) => {
         <script src="/static/app.js"></script>
         <script>
             document.addEventListener('DOMContentLoaded', async () => {
+                // プレビュー用トークン処理 & Auth設定
+                const urlParams = new URLSearchParams(window.location.search);
+                const previewToken = urlParams.get('preview_token');
+                
+                if (previewToken) {
+                    const previewUser = urlParams.get('preview_user');
+                    localStorage.setItem('token', previewToken);
+                    if (previewUser) {
+                        try { localStorage.setItem('user', decodeURIComponent(previewUser)); } catch(e){}
+                    }
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                    axios.defaults.headers.common['Authorization'] = 'Bearer ' + previewToken;
+                } else {
+                    const token = localStorage.getItem('token');
+                    if (token) {
+                        axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+                    } else {
+                        window.location.href = '/student/login';
+                        return;
+                    }
+                }
+
                 // コード参加処理
                 const joinForm = document.getElementById('join-form');
                 if (joinForm) {
@@ -5561,6 +5613,9 @@ app.get('/teacher/students', (c) => {
                         </td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">\${new Date(s.created_at).toLocaleDateString()}</td>
                         <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <button onclick="previewAsStudent(\${s.id})" class="text-green-600 hover:text-green-900 mr-4" title="この生徒としてプレビュー">
+                                <i class="fas fa-eye mr-1"></i>確認
+                            </button>
                             <button onclick="openAssignmentModal(\${s.id}, '\${s.username}')" class="text-indigo-600 hover:text-indigo-900 mr-4">
                                 <i class="fas fa-tasks mr-1"></i>割り当て
                             </button>
@@ -5648,6 +5703,26 @@ app.get('/teacher/students', (c) => {
                     Swal.fire({ icon: 'error', title: 'エラー', text: '設定の保存に失敗しました' });
                 }
             }
+
+            window.previewAsStudent = async (id) => {
+                try {
+                    const res = await axios.post('/api/teacher/students/' + id + '/impersonate');
+                    const token = res.data.token;
+                    const user = res.data.user;
+                    
+                    const width = 1024;
+                    const height = 768;
+                    const left = (window.screen.width - width) / 2;
+                    const top = (window.screen.height - height) / 2;
+                    
+                    const url = '/student?preview_token=' + token + '&preview_user=' + encodeURIComponent(JSON.stringify(user));
+                    window.open(url, '_blank', \`width=\${width},height=\${height},top=\${top},left=\${left}\`);
+                    
+                } catch(e) {
+                    console.error(e);
+                    Swal.fire({ icon: 'error', title: 'エラー', text: 'プレビューの開始に失敗しました' });
+                }
+            };
 
             function closeModal() {
                 document.getElementById('assignment-modal').classList.add('hidden');
