@@ -1220,8 +1220,11 @@ app.get('/teacher', (c) => {
                     </h1>
                     <div class="flex gap-4 items-center">
                         <span class="text-sm bg-white/20 px-3 py-1 rounded-full"><i class="fas fa-user mr-1"></i>先生モード</span>
-                        <a href="/teacher/students" class="relative px-4 py-2 bg-indigo-800 rounded-lg hover:bg-indigo-900 transition text-sm">
+                        <a href="/teacher/students" class="px-4 py-2 bg-indigo-800 rounded-lg hover:bg-indigo-900 transition text-sm">
                             <i class="fas fa-users mr-1"></i>生徒管理
+                        </a>
+                        <a href="/teacher/questions" class="relative px-4 py-2 bg-indigo-800 rounded-lg hover:bg-indigo-900 transition text-sm">
+                            <i class="fas fa-comments mr-1"></i>質問管理
                             <span id="question-badge" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center hidden">0</span>
                         </a>
                         <a href="/teacher/preview" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-600 transition text-sm">
@@ -1398,6 +1401,19 @@ app.get('/teacher', (c) => {
                         学習用語の登録と編集
                     </p>
                     <div class="flex items-center text-orange-600 font-semibold">
+                        管理画面へ
+                        <i class="fas fa-arrow-right ml-2"></i>
+                    </div>
+                </a>
+
+                <!-- 質問管理 -->
+                <a href="/teacher/questions" class="block p-6 bg-gradient-to-br from-red-100 to-red-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
+                    <div class="text-5xl mb-4">💬</div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">質問管理</h3>
+                    <p class="text-gray-600 text-sm mb-4">
+                        生徒からの質問を確認・返信
+                    </p>
+                    <div class="flex items-center text-red-600 font-semibold">
                         管理画面へ
                         <i class="fas fa-arrow-right ml-2"></i>
                     </div>
@@ -5946,6 +5962,147 @@ app.get('/teacher/glossary', (c) => {
                 document.getElementById('submit-btn').className = 'flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition font-bold';
                 document.getElementById('cancel-btn').classList.add('hidden');
             };
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// 質問管理画面
+app.get('/teacher/questions', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>質問管理 - 学習アプリ開発プラットフォーム</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
+    </head>
+    <body class="bg-gray-50 min-h-screen">
+        <!-- ナビゲーションバー -->
+        <nav class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold">
+                        <i class="fas fa-comments mr-2"></i>
+                        質問管理
+                    </h1>
+                    <div class="flex gap-4 items-center">
+                        <a href="/teacher" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
+                            <i class="fas fa-home mr-2"></i>トップ
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <div class="bg-white rounded-xl shadow-lg p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-6">
+                    <i class="fas fa-inbox mr-2 text-blue-500"></i>
+                    生徒からの質問一覧
+                </h2>
+                
+                <div id="questions-list" class="space-y-6">
+                    <div class="text-center py-12">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            // Auth Token Setup
+            const token = localStorage.getItem('token');
+            if (token) {
+                axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+            } else {
+                window.location.href = '/login';
+            }
+
+            async function loadQuestions() {
+                try {
+                    const res = await axios.get('/api/teacher/questions');
+                    const questions = res.data.questions;
+                    const container = document.getElementById('questions-list');
+                    
+                    if (questions.length === 0) {
+                        container.innerHTML = '<p class="text-center text-gray-500 py-8">まだ質問はありません</p>';
+                        return;
+                    }
+                    
+                    container.innerHTML = questions.map(q => {
+                        const isReplied = q.status === 'replied';
+                        const statusBadge = isReplied 
+                            ? '<span class="px-3 py-1 bg-green-100 text-green-800 rounded-full text-xs font-bold">返信済み</span>'
+                            : '<span class="px-3 py-1 bg-red-100 text-red-800 rounded-full text-xs font-bold">未返信</span>';
+                            
+                        const dateStr = dayjs(q.created_at).format('YYYY/MM/DD HH:mm');
+                        
+                        return \`
+                            <div class="border rounded-lg p-6 \${isReplied ? 'bg-gray-50' : 'bg-white border-red-200 shadow-sm'}">
+                                <div class="flex justify-between items-start mb-4">
+                                    <div>
+                                        <div class="flex items-center gap-3 mb-2">
+                                            \${statusBadge}
+                                            <span class="font-bold text-gray-700"><i class="fas fa-user mr-1"></i>\${q.student_name}</span>
+                                            <span class="text-sm text-gray-500"><i class="fas fa-clock mr-1"></i>\${dateStr}</span>
+                                        </div>
+                                        <div class="text-sm text-gray-500 mb-2">
+                                            対象モジュール: \${q.module_name || '不明'}
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="bg-gray-100 p-4 rounded-lg mb-4">
+                                    <p class="text-gray-800 font-bold mb-1">Q. 質問内容</p>
+                                    <p class="text-gray-700 whitespace-pre-wrap">\${q.question_text}</p>
+                                </div>
+                                
+                                \${isReplied ? \`
+                                    <div class="bg-green-50 p-4 rounded-lg border border-green-100">
+                                        <p class="text-green-800 font-bold mb-1">A. あなたの返信</p>
+                                        <p class="text-gray-700 whitespace-pre-wrap">\${q.reply_text}</p>
+                                        <p class="text-xs text-gray-400 mt-2 text-right">返信日時: \${dayjs(q.reply_at).format('YYYY/MM/DD HH:mm')}</p>
+                                    </div>
+                                \` : \`
+                                    <div>
+                                        <textarea id="reply-\${q.id}" class="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 mb-3" rows="3" placeholder="返信内容を入力してください..."></textarea>
+                                        <button onclick="sendReply(\${q.id})" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-bold">
+                                            <i class="fas fa-paper-plane mr-2"></i>返信する
+                                        </button>
+                                    </div>
+                                \`}
+                            </div>
+                        \`;
+                    }).join('');
+                    
+                } catch (e) {
+                    console.error(e);
+                    document.getElementById('questions-list').innerHTML = '<p class="text-center text-red-500 py-8">読み込みエラーが発生しました</p>';
+                }
+            }
+            
+            async function sendReply(id) {
+                const text = document.getElementById('reply-' + id).value;
+                if (!text.trim()) return alert('返信内容を入力してください');
+                
+                try {
+                    await axios.post('/api/teacher/questions/' + id + '/reply', { reply_text: text });
+                    Swal.fire('送信完了', '返信を送信しました', 'success');
+                    loadQuestions();
+                } catch (e) {
+                    console.error(e);
+                    Swal.fire('エラー', '送信に失敗しました', 'error');
+                }
+            }
+            
+            loadQuestions();
         </script>
     </body>
     </html>
