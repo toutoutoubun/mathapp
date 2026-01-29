@@ -945,14 +945,15 @@ app.get('/login', (c) => {
                         Swal.fire({
                             icon: 'error',
                             title: 'ログイン失敗',
-                            text: json.error
+                            text: json.error || 'ログインに失敗しました (' + res.status + ')'
                         });
                     }
                 } catch (e) {
+                    console.error('Login Error:', e);
                     Swal.fire({
                         icon: 'error',
                         title: 'エラー',
-                        text: 'エラーが発生しました'
+                        text: 'エラーが発生しました: ' + e.message
                     });
                 }
             });
@@ -1029,17 +1030,24 @@ app.get('/student/login', (c) => {
                         window.location.href = '/student';
                     }
                 } catch (e) {
+                    console.error('Login Error:', e);
                     if (e.response) {
                         Swal.fire({
                             icon: 'error',
                             title: 'ログイン失敗',
-                            text: e.response.data.error || 'ログインに失敗しました'
+                            text: e.response.data.error || 'ログインに失敗しました (' + e.response.status + ')'
+                        });
+                    } else if (e.request) {
+                        Swal.fire({
+                            icon: 'error',
+                            title: '通信エラー',
+                            text: 'サーバーからの応答がありません。ネットワーク接続を確認してください。'
                         });
                     } else {
                         Swal.fire({
                             icon: 'error',
                             title: 'エラー',
-                            text: 'エラーが発生しました'
+                            text: '予期せぬエラーが発生しました: ' + e.message
                         });
                     }
                 }
