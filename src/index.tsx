@@ -1,50 +1,489 @@
 import { Hono } from 'hono'
 import { serveStatic } from 'hono/cloudflare-workers'
 import { cors } from 'hono/cors'
+import { jwt, sign, verify } from 'hono/jwt'
 
 type Bindings = {
   DB: D1Database;
+  JWT_SECRET: string;
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
+const JWT_SECRET = 'super-secret-key-change-this-in-prod';
 
 // CORS設定
-app.use('/api/*', cors())
+app.use('/*', cors())
 
 // 静的ファイル配信
 app.use('/static/*', serveStatic({ root: './' }))
 
+// ==================== Auth API Routes ====================
+
+// ログイン
+app.post('/api/auth/login', async (c) => {
+  const { DB } = c.env
+  const { username, password } = await c.req.json()
+  
+  const user = await DB.prepare('SELECT * FROM users WHERE username = ? AND password = ?').bind(username, password).first()
+  
+  if (!user) {
+    return c.json({ error: 'ユーザー名またはパスワードが間違っています' }, 401)
+  }
+  
+  const payload = {
+    id: user.id,
+    username: user.username,
+    role: user.role,
+    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7 // 1 week
+  }
+  
+  const token = await sign(payload, JWT_SECRET, 'HS256')
+  return c.json({ token, user: { id: user.id, username: user.username, role: user.role } })
+})
+
+// 登録（教師用）
+app.post('/api/auth/register', async (c) => {
+  const { DB } = c.env
+  const { username, password, role } = await c.req.json()
+  
+  // 簡易実装：教師のみ登録可能とする（生徒は教師が作成する）
+  if (role !== 'teacher') {
+      return c.json({ error: '現在は教師アカウントのみ登録可能です' }, 400)
+  }
+
+  try {
+    const result = await DB.prepare(
+      'INSERT INTO users (username, password, role) VALUES (?, ?, ?)'
+    ).bind(username, password, role).run()
+    
+    return c.json({ success: true, id: result.meta.last_row_id })
+  } catch(e) {
+    return c.json({ error: 'ユーザー名が既に使用されています' }, 400)
+  }
+})
+
+// 現在のユーザー情報取得
+app.get('/api/auth/me', async (c) => {
+  const authHeader = c.req.header('Authorization');
+  if (!authHeader) return c.json(null, 401);
+  
+  const token = authHeader.replace('Bearer ', '');
+  try {
+    const payload = await verify(token, JWT_SECRET, 'HS256');
+    return c.json({ user: payload });
+  } catch(e) {
+    return c.json(null, 401);
+  }
+})
+
+// ==================== Middleware ====================
+
+// APIガード
+app.use('/api/teacher/*', async (c, next) => {
+    // 開発中はスキップしたい場合はここを調整
+    // 今回は全保護
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) return c.json({ error: 'Unauthorized' }, 401);
+    
+    try {
+        const token = authHeader.replace('Bearer ', '');
+        const payload = await verify(token, JWT_SECRET, 'HS256');
+        if (payload.role !== 'teacher') return c.json({ error: 'Forbidden' }, 403);
+        c.set('user', payload);
+        await next();
+    } catch(e) {
+        console.error('Auth Error:', e);
+        return c.json({ error: 'Unauthorized' }, 401);
+    }
+});
+
+// 生徒用APIガード
+app.use('/api/student/*', async (c, next) => {
+    // 生徒用APIは、現在は「公開デモ」と「ログイン後」が混在しているため、
+    // 厳密なガードを入れるとデモが見れなくなる。
+    // ここでは、ヘッダーがあればユーザー情報をセットし、なければゲスト扱いとする。
+    const authHeader = c.req.header('Authorization');
+    if (authHeader) {
+        try {
+            const token = authHeader.replace('Bearer ', '');
+            const payload = await verify(token, JWT_SECRET, 'HS256');
+            c.set('user', payload);
+        } catch(e) {
+            // 無効なトークンだが、ゲストとして続行
+        }
+    }
+    await next();
+});
+
 // ==================== Teacher API Routes ====================
 
-// セクション一覧取得
+// 生徒作成（教師が生徒アカウントを作る）
+app.post('/api/teacher/students', async (c) => {
+    const { DB } = c.env;
+    const user = c.get('user'); // 教師情報
+    let { username, password } = await c.req.json();
+    
+    // 自動生成ロジック
+    if (!username) {
+        // ランダムな6文字の英数字（大文字）
+        username = Math.random().toString(36).substring(2, 8).toUpperCase();
+    }
+    if (!password) {
+        // ランダムな6文字の数字（初期パスワード）
+        password = Math.floor(100000 + Math.random() * 900000).toString();
+    }
+    
+    try {
+        // 1. ユーザー作成
+        const userRes = await DB.prepare(
+            'INSERT INTO users (username, password, role) VALUES (?, ?, ?)'
+        ).bind(username, password, 'student').run();
+        const studentId = userRes.meta.last_row_id;
+        
+        // 2. 教師との紐付け
+        await DB.prepare(
+            'INSERT INTO teacher_students (teacher_id, student_id) VALUES (?, ?)'
+        ).bind(user.id, studentId).run();
+        
+        return c.json({ success: true, id: studentId, username, password });
+    } catch(e) {
+        return c.json({ error: '作成に失敗しました。ユーザー名が重複している可能性があります。' }, 400);
+    }
+});
+
+// 既存の生徒を紐付け（他の教師が作成した生徒を追加）
+app.post('/api/teacher/students/link', async (c) => {
+    const { DB } = c.env;
+    const user = c.get('user'); // 教師
+    const { username } = await c.req.json(); // 生徒コード
+
+    // 生徒を検索
+    const student = await DB.prepare('SELECT * FROM users WHERE username = ? AND role = ?').bind(username, 'student').first();
+
+    if (!student) {
+        return c.json({ error: '生徒コードが見つかりません' }, 404);
+    }
+
+    // 既に紐付いているか確認
+    const exists = await DB.prepare('SELECT * FROM teacher_students WHERE teacher_id = ? AND student_id = ?')
+        .bind(user.id, student.id).first();
+
+    if (exists) {
+        return c.json({ error: '既にあなたの生徒として登録されています' }, 400);
+    }
+
+    // 紐付け作成
+    await DB.prepare('INSERT INTO teacher_students (teacher_id, student_id) VALUES (?, ?)').bind(user.id, student.id).run();
+
+    return c.json({ success: true, student });
+});
+
+// 生徒一覧取得
+app.get('/api/teacher/students', async (c) => {
+    const { DB } = c.env;
+    const user = c.get('user');
+    
+    const result = await DB.prepare(`
+        SELECT u.id, u.username, u.created_at, ts.memo
+        FROM users u
+        JOIN teacher_students ts ON u.id = ts.student_id
+        WHERE ts.teacher_id = ?
+    `).bind(user.id).all();
+    
+    return c.json({ students: result.results });
+});
+
+// 生徒情報更新（メモなど）
+app.put('/api/teacher/students/:id', async (c) => {
+    const { DB } = c.env;
+    const user = c.get('user');
+    const studentId = c.req.param('id');
+    const { memo } = await c.req.json();
+    
+    await DB.prepare(
+        'UPDATE teacher_students SET memo = ? WHERE teacher_id = ? AND student_id = ?'
+    ).bind(memo, user.id, studentId).run();
+    
+    return c.json({ success: true });
+});
+
+// 生徒削除
+app.delete('/api/teacher/students/:id', async (c) => {
+    const { DB } = c.env;
+    const user = c.get('user');
+    const studentId = c.req.param('id');
+    
+    // 教師が管理している生徒か確認
+    const link = await DB.prepare(
+        'SELECT * FROM teacher_students WHERE teacher_id = ? AND student_id = ?'
+    ).bind(user.id, studentId).first();
+    
+    if (!link) {
+        return c.json({ error: '権限がありません' }, 403);
+    }
+    
+    // 生徒ユーザーを削除（CASCADEで関連データも削除）
+    await DB.prepare('DELETE FROM users WHERE id = ?').bind(studentId).run();
+    
+    return c.json({ success: true });
+});
+
+// 割り当て一覧取得
+app.get('/api/teacher/assignments', async (c) => {
+    const { DB } = c.env;
+    const user = c.get('user');
+    
+    const result = await DB.prepare(`
+        SELECT a.id, a.student_id, u.username as student_name, a.section_id, s.name as section_name
+        FROM assignments a
+        JOIN users u ON a.student_id = u.id
+        JOIN sections s ON a.section_id = s.id
+        WHERE a.teacher_id = ?
+    `).bind(user.id).all();
+    
+    return c.json({ assignments: result.results });
+});
+
+// 割り当て作成（セクションを生徒に公開）
+app.post('/api/teacher/assignments', async (c) => {
+    const { DB } = c.env;
+    const user = c.get('user');
+    const { student_id, section_id } = await c.req.json();
+    
+    try {
+        await DB.prepare(
+            'INSERT INTO assignments (teacher_id, student_id, section_id) VALUES (?, ?, ?)'
+        ).bind(user.id, student_id, section_id).run();
+        return c.json({ success: true });
+    } catch(e) {
+        return c.json({ error: '既に割り当て済みです' }, 400);
+    }
+});
+
+// 割り当て解除
+app.delete('/api/teacher/assignments/:id', async (c) => {
+    const { DB } = c.env;
+    const user = c.get('user');
+    const id = c.req.param('id');
+    
+    await DB.prepare('DELETE FROM assignments WHERE id = ? AND teacher_id = ?').bind(id, user.id).run();
+    return c.json({ success: true });
+});
+
+// セクション一覧取得（教師の作成したもののみ）
 app.get('/api/teacher/sections', async (c) => {
   const { DB } = c.env
-  const result = await DB.prepare('SELECT * FROM sections ORDER BY created_at DESC').all()
+  const user = c.get('user')
+  const result = await DB.prepare('SELECT * FROM sections WHERE teacher_id = ? ORDER BY created_at DESC').bind(user.id).all()
   return c.json({ sections: result.results })
 })
 
 // セクション作成
 app.post('/api/teacher/sections', async (c) => {
   const { DB } = c.env
+  const user = c.get('user')
   const { name, description, grade_level, subject } = await c.req.json()
   
+  // アクセスコード生成（ランダム英数字6文字）
+  const access_code = Math.random().toString(36).substring(2, 8).toUpperCase();
+
   const result = await DB.prepare(
-    'INSERT INTO sections (name, description, grade_level, subject) VALUES (?, ?, ?, ?)'
-  ).bind(name, description || null, grade_level || null, subject || null).run()
+    'INSERT INTO sections (name, description, grade_level, subject, teacher_id, access_code) VALUES (?, ?, ?, ?, ?, ?)'
+  ).bind(name, description || null, grade_level || null, subject || null, user.id, access_code).run()
   
-  return c.json({ success: true, id: result.meta.last_row_id })
+  return c.json({ success: true, id: result.meta.last_row_id, access_code })
+})
+
+// セクション更新
+app.put('/api/teacher/sections/:id', async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  const { name, description, grade_level, subject } = await c.req.json()
+  
+  await DB.prepare(
+    'UPDATE sections SET name = ?, description = ?, grade_level = ?, subject = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+  ).bind(name, description || null, grade_level || null, subject || null, id).run()
+  
+  return c.json({ success: true })
+})
+
+// セクション削除
+app.delete('/api/teacher/sections/:id', async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  
+  // カスケード削除はDB定義で行われている前提だが、念のため関連データも意識する
+  await DB.prepare('DELETE FROM sections WHERE id = ?').bind(id).run()
+  
+  return c.json({ success: true })
 })
 
 // ==================== Student API Routes ====================
 
-// セクション一覧取得（生徒用）
+// セクション一覧取得（生徒用：割り当てられたもののみ）
 app.get('/api/student/sections', async (c) => {
   const { DB } = c.env
-  const result = await DB.prepare('SELECT * FROM sections ORDER BY grade_level, subject').all()
+  const user = c.get('user')
+  
+  if (!user) {
+      return c.json({ sections: [] })
+  }
+
+  const result = await DB.prepare(`
+    SELECT s.* 
+    FROM sections s
+    JOIN assignments a ON s.id = a.section_id
+    WHERE a.student_id = ?
+    ORDER BY s.grade_level, s.subject
+  `).bind(user.id).all()
+  
   return c.json({ sections: result.results })
 })
 
+// フェーズ一覧取得（生徒用）
+app.get('/api/student/phases', async (c) => {
+  const { DB } = c.env
+  const section_id = c.req.query('section_id')
+  
+  let query = 'SELECT * FROM phases'
+  let params: any[] = []
+  
+  if (section_id) {
+    query += ' WHERE section_id = ?'
+    params.push(section_id)
+  }
+  
+  query += ' ORDER BY order_index'
+  const result = await DB.prepare(query).bind(...params).all()
+  return c.json({ phases: result.results })
+})
+
+// モジュール一覧取得（生徒用）
+app.get('/api/student/modules', async (c) => {
+  const { DB } = c.env
+  const phase_id = c.req.query('phase_id')
+  
+  let query = 'SELECT * FROM modules'
+  if (phase_id) {
+    query += ' WHERE phase_id = ?'
+    const result = await DB.prepare(query + ' ORDER BY order_index').bind(phase_id).all()
+    return c.json({ modules: result.results })
+  }
+  
+  const result = await DB.prepare(query + ' ORDER BY order_index').all()
+  return c.json({ modules: result.results })
+})
+
+// アクセスコードでセクションに参加（生徒用）
+app.post('/api/student/join', async (c) => {
+  const { DB } = c.env
+  const user = c.get('user')
+  const { access_code } = await c.req.json()
+  
+  if (!user) {
+      return c.json({ error: 'ログインが必要です' }, 401)
+  }
+
+  // コードからセクションを検索
+  const section = await DB.prepare('SELECT * FROM sections WHERE access_code = ?').bind(access_code).first()
+  
+  if (!section) {
+      return c.json({ error: '無効なアクセスコードです' }, 404)
+  }
+
+  // 既に割り当てられているか確認
+  try {
+      await DB.prepare(
+          'INSERT INTO assignments (teacher_id, student_id, section_id) VALUES (?, ?, ?)'
+      ).bind(section.teacher_id, user.id, section.id).run()
+      
+      return c.json({ success: true, section })
+  } catch(e) {
+      // 既に参加済みの場合はエラーを返す
+      return c.json({ error: '既に参加済みのクラスです' }, 400)
+  }
+})
+
 // ==================== Student API Routes ====================
+
+// ステップ一覧取得（生徒用）
+app.get('/api/student/steps', async (c) => {
+  const { DB } = c.env
+  const module_id = c.req.query('module_id')
+  
+  if (!module_id) {
+    return c.json({ error: 'module_id is required' }, 400)
+  }
+  
+  // TODO: 生徒がこのモジュールにアクセス権があるかチェックすべき
+  
+  const result = await DB.prepare(
+    'SELECT * FROM steps WHERE module_id = ? ORDER BY order_index'
+  ).bind(module_id).all()
+  
+  return c.json({ steps: result.results })
+})
+
+// コンテンツブロック一覧取得（生徒用）
+app.get('/api/student/content-blocks', async (c) => {
+  const { DB } = c.env
+  const step_id = c.req.query('step_id')
+  
+  if (!step_id) {
+    return c.json({ error: 'step_id is required' }, 400)
+  }
+  
+  const result = await DB.prepare(
+    'SELECT * FROM content_blocks WHERE step_id = ? ORDER BY order_index'
+  ).bind(step_id).all()
+  
+  // JSONパース
+  const blocks = result.results.map((b: any) => {
+    try {
+      return { ...b, content: JSON.parse(b.content) }
+    } catch (e) {
+      return { ...b, content: {} }
+    }
+  })
+  
+  return c.json({ blocks })
+})
+
+// 問題一覧取得（生徒用）
+app.get('/api/student/questions', async (c) => {
+  const { DB } = c.env
+  const step_id = c.req.query('step_id')
+  
+  if (!step_id) {
+    return c.json({ error: 'step_id is required' }, 400)
+  }
+  
+  const result = await DB.prepare(
+    'SELECT * FROM questions WHERE step_id = ? ORDER BY order_index'
+  ).bind(step_id).all()
+  
+  // JSONパースと選択肢の取得
+  const questions = await Promise.all(result.results.map(async (q: any) => {
+    let config = {}
+    try {
+      config = JSON.parse(q.config)
+    } catch (e) {
+      config = {}
+    }
+
+    const optionsResult = await DB.prepare(
+      'SELECT * FROM question_options WHERE question_id = ? ORDER BY order_index'
+    ).bind(q.id).all()
+
+    return {
+      ...q,
+      config,
+      options: optionsResult.results
+    }
+  }))
+  
+  return c.json({ questions })
+})
 
 // 進捗状況取得
 app.get('/api/progress', async (c) => {
@@ -165,12 +604,12 @@ app.get('/api/glossary', async (c) => {
   const { DB } = c.env
   const search = c.req.query('search') || ''
   
-  let query = 'SELECT * FROM glossary'
+  let query = 'SELECT * FROM glossary_terms'
   let params: string[] = []
   
   if (search) {
-    query += ' WHERE term LIKE ? OR definition LIKE ?'
-    params = [`%${search}%`, `%${search}%`]
+    query += ' WHERE term LIKE ? OR definition LIKE ? OR reading LIKE ?'
+    params = [`%${search}%`, `%${search}%`, `%${search}%`]
   }
   
   query += ' ORDER BY term ASC'
@@ -180,13 +619,53 @@ app.get('/api/glossary', async (c) => {
   return c.json({ glossary: result.results })
 })
 
+// 用語集作成
+app.post('/api/teacher/glossary', async (c) => {
+  const { DB } = c.env
+  const { term, reading, definition, example, category } = await c.req.json()
+  
+  const result = await DB.prepare(
+    'INSERT INTO glossary_terms (term, reading, definition, example, category) VALUES (?, ?, ?, ?, ?)'
+  ).bind(term, reading || null, definition, example || null, category || null).run()
+  
+  return c.json({ success: true, id: result.meta.last_row_id })
+})
+
+// 用語集更新
+app.put('/api/teacher/glossary/:id', async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  const { term, reading, definition, example, category } = await c.req.json()
+  
+  await DB.prepare(
+    'UPDATE glossary_terms SET term = ?, reading = ?, definition = ?, example = ?, category = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+  ).bind(term, reading || null, definition, example || null, category || null, id).run()
+  
+  return c.json({ success: true })
+})
+
+// 用語集削除
+app.delete('/api/teacher/glossary/:id', async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  
+  await DB.prepare('DELETE FROM glossary_terms WHERE id = ?').bind(id).run()
+  
+  return c.json({ success: true })
+})
+
 // フェーズごとの進捗取得
 app.get('/api/student/phase-progress', async (c) => {
   const { DB } = c.env
-  const userId = 'default_user' // TODO: 認証実装後に動的にする
+  const user = c.get('user')
+  
+  if (!user) {
+      return c.json({ progress: [] })
+  }
 
   // 1. フェーズごとの総ステップ数を取得
   // sections -> phases -> modules -> steps の階層を結合
+  // 生徒に割り当てられたセクションのみを対象にする
   const phasesResult = await DB.prepare(`
     SELECT 
       p.id as phase_id, 
@@ -196,10 +675,12 @@ app.get('/api/student/phase-progress', async (c) => {
       COUNT(st.id) as total_steps
     FROM phases p
     JOIN sections s ON p.section_id = s.id
+    JOIN assignments a ON s.id = a.section_id
     LEFT JOIN modules m ON p.id = m.phase_id
     LEFT JOIN steps st ON m.id = st.module_id
+    WHERE a.student_id = ?
     GROUP BY p.id
-  `).all();
+  `).bind(user.id).all();
 
   // 2. フェーズごとの完了ステップ数を取得
   // user_progress -> steps -> modules の階層から集計
@@ -212,7 +693,7 @@ app.get('/api/student/phase-progress', async (c) => {
     JOIN modules m ON st.module_id = m.id
     WHERE up.user_id = ? AND up.status = 'completed'
     GROUP BY m.phase_id
-  `).bind(userId).all();
+  `).bind(user.id).all();
 
   // 3. データをマージして進捗率を計算
   const progressMap = new Map();
@@ -239,10 +720,270 @@ app.get('/api/student/phase-progress', async (c) => {
   return c.json({ progress: phaseProgress })
 })
 
+// ログイン画面（教師用）
+app.get('/login', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>教師ログイン - 学習アプリ</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-gray-100 min-h-screen flex items-center justify-center">
+        <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md border-t-4 border-indigo-600">
+            <h1 class="text-2xl font-bold text-center mb-2 text-indigo-600">教師ログイン</h1>
+            <p class="text-center text-gray-500 mb-6 text-sm">先生用アカウントでログインしてください</p>
+            <form id="login-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">ユーザー名</label>
+                    <input type="text" name="username" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">パスワード</label>
+                    <input type="password" name="password" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-indigo-500">
+                </div>
+                <button type="submit" class="w-full py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">ログイン</button>
+            </form>
+            <div class="mt-6 text-center space-y-2">
+                <div><a href="/register" class="text-indigo-600 hover:underline text-sm">教師アカウント登録はこちら</a></div>
+                <div><a href="/student/login" class="text-gray-500 hover:text-gray-700 text-sm">← 生徒ログインへ移動</a></div>
+            </div>
+        </div>
+        <script>
+            document.getElementById('login-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData.entries());
+                
+                try {
+                    const res = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                    const json = await res.json();
+                    
+                    if (res.ok) {
+                        if (json.user.role !== 'teacher') {
+                            alert('生徒アカウントでは教師用画面にログインできません。\\n生徒用ログイン画面へ移動してください。');
+                            return;
+                        }
+                        localStorage.setItem('token', json.token);
+                        localStorage.setItem('user', JSON.stringify(json.user));
+                        window.location.href = '/teacher/sections';
+                    } else {
+                        alert(json.error);
+                    }
+                } catch (e) {
+                    alert('エラーが発生しました');
+                }
+            });
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// 生徒用ログイン画面
+app.get('/student/login', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>生徒ログイン - 学習アプリ</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-blue-50 min-h-screen flex items-center justify-center">
+        <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border-t-8 border-yellow-400">
+            <div class="text-center mb-6">
+                <i class="fas fa-graduation-cap text-5xl text-blue-500 mb-2"></i>
+                <h1 class="text-3xl font-bold text-gray-800">生徒ログイン</h1>
+                <p class="text-gray-500">今日も楽しく学びましょう！</p>
+            </div>
+            
+            <form id="student-login-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 mb-1">生徒コード</label>
+                    <input type="text" name="username" required class="w-full px-4 py-3 border-2 border-blue-100 rounded-xl focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 bg-blue-50 transition" placeholder="先生から配られたコードを入力">
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 mb-1">パスワード</label>
+                    <input type="password" name="password" required class="w-full px-4 py-3 border-2 border-blue-100 rounded-xl focus:ring-2 focus:ring-yellow-400 focus:border-yellow-400 bg-blue-50 transition">
+                </div>
+                <button type="submit" class="w-full py-4 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-bold rounded-xl hover:from-blue-600 hover:to-blue-700 transform hover:scale-[1.02] transition shadow-md">
+                    <i class="fas fa-sign-in-alt mr-2"></i>はじめる
+                </button>
+            </form>
+            <div class="mt-8 text-center border-t pt-4">
+                <a href="/login" class="text-gray-400 hover:text-gray-600 text-sm transition">
+                    <i class="fas fa-chalkboard-teacher mr-1"></i>先生はこちら
+                </a>
+            </div>
+        </div>
+        <script>
+            document.getElementById('student-login-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData.entries());
+                
+                try {
+                    const res = await fetch('/api/auth/login', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                    const json = await res.json();
+                    
+                    if (res.ok) {
+                        if (json.user.role !== 'student') {
+                            alert('教師アカウントでは生徒用画面にログインできません。\\n教師用ログイン画面へ移動してください。');
+                            return;
+                        }
+                        localStorage.setItem('token', json.token);
+                        localStorage.setItem('user', JSON.stringify(json.user));
+                        window.location.href = '/student';
+                    } else {
+                        alert(json.error);
+                    }
+                } catch (e) {
+                    alert('エラーが発生しました');
+                }
+            });
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// 登録画面
+app.get('/register', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>教師登録 - 学習アプリ</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-gray-100 min-h-screen flex items-center justify-center">
+        <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md">
+            <h1 class="text-2xl font-bold text-center mb-6 text-green-600">教師登録</h1>
+            <form id="register-form" class="space-y-4">
+                <input type="hidden" name="role" value="teacher">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">ユーザー名</label>
+                    <input type="text" name="username" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700">パスワード</label>
+                    <input type="password" name="password" required class="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500">
+                </div>
+                <button type="submit" class="w-full py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">登録</button>
+            </form>
+            <div class="mt-4 text-center text-sm">
+                <a href="/login" class="text-green-600 hover:underline">ログインはこちら</a>
+            </div>
+        </div>
+        <script>
+            document.getElementById('register-form').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target);
+                const data = Object.fromEntries(formData.entries());
+                
+                try {
+                    const res = await fetch('/api/auth/register', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                    const json = await res.json();
+                    
+                    if (res.ok) {
+                        alert('登録しました。ログインしてください。');
+                        window.location.href = '/login';
+                    } else {
+                        alert(json.error);
+                    }
+                } catch (e) {
+                    alert('エラーが発生しました');
+                }
+            });
+        </script>
+    </body>
+    </html>
+  `)
+})
+
 // ==================== HTML Routes ====================
 
-// メインページ - 教師用プラットフォーム
+// ポータル画面（入り口）
 app.get('/', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>学習アプリ</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-gray-50 min-h-screen flex items-center justify-center p-4">
+        <div class="max-w-4xl w-full">
+            <div class="text-center mb-12">
+                <h1 class="text-4xl md:text-5xl font-bold text-gray-800 mb-4">
+                    <span class="text-indigo-600">Learning</span> App
+                </h1>
+                <p class="text-xl text-gray-600">楽しく学び、教えるためのプラットフォーム</p>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-3xl mx-auto">
+                <!-- 生徒用入り口 -->
+                <a href="/student/login" class="group block bg-white rounded-2xl shadow-xl overflow-hidden hover:shadow-2xl transition transform hover:-translate-y-1 border-b-8 border-yellow-400">
+                    <div class="bg-blue-500 p-6 text-center group-hover:bg-blue-600 transition">
+                        <i class="fas fa-user-graduate text-6xl text-white"></i>
+                    </div>
+                    <div class="p-8 text-center">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-2">生徒のみなさん</h2>
+                        <p class="text-gray-500 mb-6">ログインして学習を始めましょう！</p>
+                        <span class="inline-block px-6 py-3 bg-yellow-400 text-yellow-900 font-bold rounded-full group-hover:bg-yellow-300 transition">
+                            生徒ログイン <i class="fas fa-arrow-right ml-2"></i>
+                        </span>
+                    </div>
+                </a>
+
+                <!-- 教師用入り口 -->
+                <a href="/login" class="group block bg-white rounded-2xl shadow-xl overflow-hidden hover:shadow-2xl transition transform hover:-translate-y-1 border-b-8 border-indigo-600">
+                    <div class="bg-gray-800 p-6 text-center group-hover:bg-gray-700 transition">
+                        <i class="fas fa-chalkboard-teacher text-6xl text-white"></i>
+                    </div>
+                    <div class="p-8 text-center">
+                        <h2 class="text-2xl font-bold text-gray-800 mb-2">先生方</h2>
+                        <p class="text-gray-500 mb-6">教材の作成や進捗の管理はこちら</p>
+                        <span class="inline-block px-6 py-3 bg-indigo-600 text-white font-bold rounded-full group-hover:bg-indigo-500 transition">
+                            教師ログイン <i class="fas fa-arrow-right ml-2"></i>
+                        </span>
+                    </div>
+                </a>
+            </div>
+            
+            <div class="text-center mt-12 text-gray-400 text-sm">
+                &copy; 2026 Learning App Platform
+            </div>
+        </div>
+    </body>
+    </html>
+  `)
+})
+
+// メインページ - 教師用プラットフォーム
+app.get('/teacher', (c) => {
   return c.html(`
     <!DOCTYPE html>
     <html lang="ja">
@@ -262,9 +1003,10 @@ app.get('/', (c) => {
                         <i class="fas fa-chalkboard-teacher mr-2"></i>
                         学習アプリ開発プラットフォーム（教師用）
                     </h1>
-                    <div class="flex gap-4">
-                        <a href="/student" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-400 transition">
-                            <i class="fas fa-user-graduate mr-2"></i>生徒画面を見る
+                    <div class="flex gap-4 items-center">
+                        <span class="text-sm bg-white/20 px-3 py-1 rounded-full"><i class="fas fa-user mr-1"></i>先生モード</span>
+                        <a href="/" class="px-4 py-2 bg-indigo-800 rounded-lg hover:bg-indigo-900 transition text-sm">
+                            <i class="fas fa-sign-out-alt mr-1"></i>ログアウト
                         </a>
                     </div>
                 </div>
@@ -273,6 +1015,16 @@ app.get('/', (c) => {
 
         <!-- メインコンテンツ -->
         <div class="max-w-7xl mx-auto px-4 py-8">
+            <!-- Auth Check Script -->
+            <script>
+                const token = localStorage.getItem('token');
+                const user = JSON.parse(localStorage.getItem('user') || '{}');
+                
+                if (!token || user.role !== 'teacher') {
+                    window.location.href = '/login';
+                }
+            </script>
+
             <!-- ウェルカムセクション -->
             <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
                 <div class="text-center">
@@ -280,7 +1032,7 @@ app.get('/', (c) => {
                     <h2 class="text-3xl font-bold text-gray-800 mb-4">教師用管理画面</h2>
                     <p class="text-lg text-gray-600 mb-6">
                         学年単位で学習コンテンツを作成できるプラットフォームです。<br>
-                        <strong>エディタ（学年）→ フェーズ（大単元）→ モジュール（中単元）→ ステップ（学習内容）</strong>
+                        <strong>セクション（学年）→ フェーズ（大単元）→ モジュール（中単元）→ ステップ（学習内容）</strong>
                     </p>
                 </div>
             </div>
@@ -294,7 +1046,7 @@ app.get('/', (c) => {
                 <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div class="bg-white p-4 rounded-lg shadow">
                         <div class="text-3xl mb-2">1️⃣</div>
-                        <h4 class="font-bold text-gray-800 mb-1">エディタ</h4>
+                        <h4 class="font-bold text-gray-800 mb-1">セクション</h4>
                         <p class="text-xs text-gray-600">学年単位（例：中1数学）</p>
                     </div>
                     <div class="bg-white p-4 rounded-lg shadow">
@@ -382,8 +1134,34 @@ app.get('/', (c) => {
                     </div>
                 </a>
 
+                <!-- 生徒管理 -->
+                <a href="/teacher/students" class="block p-6 bg-gradient-to-br from-teal-100 to-teal-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
+                    <div class="text-5xl mb-4">👥</div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">生徒管理</h3>
+                    <p class="text-gray-600 text-sm mb-4">
+                        生徒コードの発行と管理
+                    </p>
+                    <div class="flex items-center text-teal-600 font-semibold">
+                        管理画面へ
+                        <i class="fas fa-arrow-right ml-2"></i>
+                    </div>
+                </a>
+
+                <!-- 用語集管理 -->
+                <a href="/teacher/glossary" class="block p-6 bg-gradient-to-br from-orange-100 to-orange-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
+                    <div class="text-5xl mb-4">📖</div>
+                    <h3 class="text-xl font-bold text-gray-800 mb-2">用語集管理</h3>
+                    <p class="text-gray-600 text-sm mb-4">
+                        学習用語の登録と編集
+                    </p>
+                    <div class="flex items-center text-orange-600 font-semibold">
+                        管理画面へ
+                        <i class="fas fa-arrow-right ml-2"></i>
+                    </div>
+                </a>
+
                 <!-- 生徒画面プレビュー -->
-                <a href="/student" class="block p-6 bg-gradient-to-br from-green-100 to-green-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
+                <a href="/teacher/preview" class="block p-6 bg-gradient-to-br from-green-100 to-green-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
                     <div class="text-5xl mb-4">👀</div>
                     <h3 class="text-xl font-bold text-gray-800 mb-2">生徒画面</h3>
                     <p class="text-gray-600 text-sm mb-4">
@@ -396,6 +1174,173 @@ app.get('/', (c) => {
                 </a>
             </div>
         </div>
+    </body>
+    </html>
+  `)
+})
+
+// 教師用プレビュー画面
+app.get('/teacher/preview', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>学習アプリ（プレビュー）</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <link href="/static/style.css" rel="stylesheet">
+    </head>
+    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
+        <!-- プレビュー用ナビゲーションバー -->
+        <nav class="bg-green-600 text-white shadow-md">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold">
+                        <i class="fas fa-eye mr-2"></i>
+                        生徒画面プレビュー
+                    </h1>
+                    <div class="flex gap-4 items-center">
+                        <select id="section-select" class="px-4 py-2 border-2 border-green-400 bg-green-700 rounded-lg focus:ring-2 focus:ring-green-300 focus:outline-none text-white">
+                            <option value="">学年を選択...</option>
+                        </select>
+                        <a href="/teacher" class="px-4 py-2 bg-white text-green-700 font-bold rounded-lg hover:bg-gray-100 transition">
+                            <i class="fas fa-sign-out-alt mr-2"></i>管理画面に戻る
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- メインコンテンツ -->
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-8 rounded shadow">
+                <p class="font-bold"><i class="fas fa-info-circle mr-2"></i>プレビューモード</p>
+                <p>これは教師用のプレビュー画面です。実際の生徒画面とは一部挙動が異なる場合があります。</p>
+            </div>
+
+            <!-- 利用可能なコンテンツ -->
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-bold text-gray-800">
+                        <i class="fas fa-book-open mr-2 text-blue-600"></i>
+                        利用可能な学習コンテンツ
+                    </h3>
+                </div>
+                
+                <p class="text-gray-600 mb-6">
+                    作成されたコンテンツがここに表示されます。
+                </p>
+                
+                <div id="modules-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div class="text-center col-span-full py-8">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script src="/static/app.js"></script>
+        <script>
+            // Auth Token Setup
+            const token = localStorage.getItem('token');
+            if (token) {
+                axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+            } else {
+                window.location.href = '/login';
+            }
+
+            document.addEventListener('DOMContentLoaded', async () => {
+                const container = document.getElementById('modules-grid');
+                const sectionSelect = document.getElementById('section-select');
+                
+                try {
+                    // 1. セクション一覧取得 (教師用APIを使用することで全てのセクションが見える)
+                    const sectionsRes = await axios.get('/api/teacher/sections');
+                    const sections = sectionsRes.data.sections;
+                    
+                    if (sectionSelect) {
+                        sectionSelect.innerHTML = '<option value="">すべての学年</option>' + 
+                            sections.map(s => \`<option value="\${s.id}">\${s.name}</option>\`).join('');
+                        
+                        // フィルタリングイベント
+                        sectionSelect.addEventListener('change', (e) => {
+                            const selectedId = e.target.value;
+                            const cards = document.querySelectorAll('.module-card');
+                            let hasVisible = false;
+                            cards.forEach(card => {
+                                if (!selectedId || card.dataset.sectionId === selectedId) {
+                                    card.style.display = 'block';
+                                    hasVisible = true;
+                                } else {
+                                    card.style.display = 'none';
+                                }
+                            });
+                            
+                            const emptyMsg = document.getElementById('empty-message');
+                            if (emptyMsg) emptyMsg.style.display = hasVisible ? 'none' : 'block';
+                        });
+                    }
+                    
+                    // 2. コンテンツ一覧表示
+                    let hasContent = false;
+                    const cardsHtml = [];
+
+                    for (const section of sections) {
+                        const phasesRes = await axios.get('/api/teacher/phases?section_id=' + section.id);
+                        const phases = phasesRes.data.phases;
+
+                        for (const phase of phases) {
+                            const modulesRes = await axios.get('/api/teacher/modules?phase_id=' + phase.id);
+                            const modules = modulesRes.data.modules;
+
+                            modules.forEach(module => {
+                                hasContent = true;
+                                const colorClass = module.color ? \`from-\${module.color}-100 to-\${module.color}-200\` : 'from-indigo-100 to-purple-200';
+                                
+                                cardsHtml.push(\`
+                                    <a href="/student/modules/\${module.id}?preview=true" 
+                                       class="module-card block p-6 bg-gradient-to-br \${colorClass} rounded-lg hover:shadow-xl transition transform hover:-translate-y-1"
+                                       data-section-id="\${section.id}">
+                                        <div class="text-4xl mb-4">\${module.icon || '📝'}</div>
+                                        <h4 class="text-xl font-bold text-gray-800 mb-2">\${module.name}</h4>
+                                        <p class="text-gray-600 text-xs font-bold uppercase tracking-wide opacity-70 mb-2">
+                                            \${section.name} &gt; \${phase.name}
+                                        </p>
+                                        <p class="text-gray-600 text-sm line-clamp-2">
+                                            \${module.description || '説明なし'}
+                                        </p>
+                                        <div class="mt-4 text-sm font-semibold opacity-80">
+                                            プレビューする →
+                                        </div>
+                                    </a>
+                                \`);
+                            });
+                        }
+                    }
+                    
+                    if (!hasContent) {
+                        container.innerHTML = \`
+                            <div class="col-span-full text-center py-12 bg-gray-50 rounded-xl">
+                                <p class="text-gray-500">まだコンテンツがありません。</p>
+                            </div>
+                        \`;
+                    } else {
+                        container.innerHTML = cardsHtml.join('') + \`
+                            <div id="empty-message" class="col-span-full text-center py-12 bg-gray-50 rounded-xl" style="display: none;">
+                                <p class="text-gray-500">この学年にはコンテンツがありません。</p>
+                            </div>
+                        \`;
+                    }
+
+                } catch (e) {
+                    console.error(e);
+                    container.innerHTML = '<p class="text-red-500 col-span-full text-center">コンテンツの読み込みに失敗しました。</p>';
+                }
+            });
+        </script>
     </body>
     </html>
   `)
@@ -431,8 +1376,8 @@ app.get('/student', (c) => {
                         <a href="/student" class="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition">
                             <i class="fas fa-home mr-2"></i>ホーム
                         </a>
-                        <a href="/student/achievements" class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition">
-                            <i class="fas fa-trophy mr-2"></i>達成記録
+                        <a href="/student/glossary" class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition">
+                            <i class="fas fa-book mr-2"></i>用語集
                         </a>
                     </div>
                 </div>
@@ -450,10 +1395,22 @@ app.get('/student', (c) => {
 
             <!-- 利用可能なコンテンツ -->
             <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <h3 class="text-2xl font-bold text-gray-800 mb-6">
-                    <i class="fas fa-book-open mr-2 text-blue-600"></i>
-                    利用可能な学習コンテンツ
-                </h3>
+                <div class="flex justify-between items-center mb-6">
+                    <h3 class="text-2xl font-bold text-gray-800">
+                        <i class="fas fa-book-open mr-2 text-blue-600"></i>
+                        利用可能な学習コンテンツ
+                    </h3>
+                    
+                    <!-- コード参加フォーム -->
+                    <form id="join-form" class="flex gap-2">
+                        <input type="text" name="access_code" placeholder="クラスコードを入力" required
+                               class="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 uppercase font-mono">
+                        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+                            参加
+                        </button>
+                    </form>
+                </div>
+                
                 <p class="text-gray-600 mb-6">
                     作成されたコンテンツがここに表示されます。
                 </p>
@@ -482,6 +1439,34 @@ app.get('/student', (c) => {
         <script src="/static/app.js"></script>
         <script>
             document.addEventListener('DOMContentLoaded', async () => {
+                // コード参加処理
+                const joinForm = document.getElementById('join-form');
+                if (joinForm) {
+                    joinForm.addEventListener('submit', async (e) => {
+                        e.preventDefault();
+                        const formData = new FormData(e.target);
+                        const code = formData.get('access_code');
+                        
+                        try {
+                            const res = await axios.post('/api/student/join', { access_code: code });
+                            if (res.data.success) {
+                                alert(\`「\${res.data.section.name}」に参加しました！\`);
+                                window.location.reload();
+                            }
+                        } catch(e) {
+                            if (e.response && e.response.status === 404) {
+                                alert('無効なコードです');
+                            } else if (e.response && e.response.status === 400) {
+                                alert(e.response.data.error || '既に参加済みのクラスです');
+                            } else if (e.response && e.response.status === 401) {
+                                window.location.href = '/login';
+                            } else {
+                                alert('エラーが発生しました');
+                            }
+                        }
+                    });
+                }
+
                 const container = document.getElementById('modules-grid');
                 const progressContainer = document.getElementById('progress-container');
                 const sectionSelect = document.getElementById('section-select');
@@ -491,7 +1476,7 @@ app.get('/student', (c) => {
 
                 try {
                     // 1. セクション一覧取得 & プルダウン設定
-                    const sectionsRes = await axios.get('/api/teacher/sections');
+                    const sectionsRes = await axios.get('/api/student/sections');
                     const sections = sectionsRes.data.sections;
                     
                     if (sectionSelect) {
@@ -528,11 +1513,11 @@ app.get('/student', (c) => {
                     const cardsHtml = [];
 
                     for (const section of sections) {
-                        const phasesRes = await axios.get('/api/teacher/phases?section_id=' + section.id);
+                        const phasesRes = await axios.get('/api/student/phases?section_id=' + section.id);
                         const phases = phasesRes.data.phases;
 
                         for (const phase of phases) {
-                            const modulesRes = await axios.get('/api/teacher/modules?phase_id=' + phase.id);
+                            const modulesRes = await axios.get('/api/student/modules?phase_id=' + phase.id);
                             const modules = modulesRes.data.modules;
 
                             modules.forEach(module => {
@@ -564,7 +1549,6 @@ app.get('/student', (c) => {
                         container.innerHTML = \`
                             <div class="col-span-full text-center py-12 bg-gray-50 rounded-xl">
                                 <p class="text-gray-500">まだコンテンツが公開されていません。</p>
-                                <a href="/student/demo" class="text-indigo-500 hover:underline mt-2 inline-block">デモコンテンツを見る</a>
                             </div>
                         \`;
                     } else {
@@ -627,1078 +1611,11 @@ app.get('/student', (c) => {
 })
 
 // デモページ - 数学学習アプリ（生徒用）
-app.get('/student/demo', (c) => {
-  return c.html(`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>数学学習アプリ（デモ）</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <link href="/static/style.css" rel="stylesheet">
-    </head>
-    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
-        <!-- ナビゲーションバー -->
-        <nav class="bg-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 py-4">
-                <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold text-purple-600">
-                        <i class="fas fa-graduation-cap mr-2"></i>
-                        数学の冒険（デモ）
-                    </h1>
-                    <div class="flex gap-4">
-                        <a href="/student" class="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition">
-                            <i class="fas fa-arrow-left mr-2"></i>戻る
-                        </a>
-                        <a href="/student/demo" class="px-4 py-2 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition">
-                            <i class="fas fa-home mr-2"></i>ホーム
-                        </a>
-                        <a href="/student/achievements" class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition">
-                            <i class="fas fa-trophy mr-2"></i>達成記録
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </nav>
-
-        <!-- メインコンテンツ -->
-        <div class="max-w-7xl mx-auto px-4 py-8">
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <h2 class="text-3xl font-bold text-gray-800 mb-4">ようこそ!</h2>
-                <p class="text-lg text-gray-600 mb-6">
-                    このアプリでは、中学数学の基礎をゆっくり、確実に学んでいきます。<br>
-                    一つずつ、自分のペースで進めていきましょう。
-                </p>
-            </div>
-
-            <!-- フェーズ0: 算数再翻訳 -->
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <h3 class="text-2xl font-bold text-purple-600 mb-6">
-                    <i class="fas fa-star mr-2"></i>
-                    フェーズ0: 算数再翻訳
-                </h3>
-                <p class="text-gray-600 mb-6">
-                    中学数学を始める前に、大切な基礎をしっかり理解しましょう。
-                </p>
-                
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <!-- モジュール1: グラフの読解 -->
-                    <a href="/module/graph_basics" class="block p-6 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg hover:shadow-xl transition transform hover:-translate-y-1">
-                        <div class="text-4xl mb-4">📊</div>
-                        <h4 class="text-xl font-bold text-gray-800 mb-2">グラフの読解</h4>
-                        <p class="text-gray-600 text-sm">
-                            グラフの見方を一つずつ学びます
-                        </p>
-                        <div class="mt-4 text-sm text-blue-600 font-semibold">
-                            15つのステップ →
-                        </div>
-                    </a>
-
-                    <!-- モジュール2: 基数性の再構築 -->
-                    <a href="/module/cardinality" class="block p-6 bg-gradient-to-br from-green-100 to-green-200 rounded-lg hover:shadow-xl transition transform hover:-translate-y-1">
-                        <div class="text-4xl mb-4">🔢</div>
-                        <h4 class="text-xl font-bold text-gray-800 mb-2">基数性の再構築</h4>
-                        <p class="text-gray-600 text-sm">
-                            数字が表す「量」を理解します
-                        </p>
-                        <div class="mt-4 text-sm text-green-600 font-semibold">
-                            12つのステップ →
-                        </div>
-                    </a>
-
-                    <!-- モジュール3: 単位と量 -->
-                    <a href="/module/units" class="block p-6 bg-gradient-to-br from-yellow-100 to-yellow-200 rounded-lg hover:shadow-xl transition transform hover:-translate-y-1">
-                        <div class="text-4xl mb-4">📏</div>
-                        <h4 class="text-xl font-bold text-gray-800 mb-2">単位と量</h4>
-                        <p class="text-gray-600 text-sm">
-                            単位を揃えて比べる方法を学びます
-                        </p>
-                        <div class="mt-4 text-sm text-yellow-600 font-semibold">
-                            10つのステップ →
-                        </div>
-                    </a>
-
-                    <!-- モジュール4: 割合の直感 -->
-                    <a href="/module/proportions" class="block p-6 bg-gradient-to-br from-pink-100 to-pink-200 rounded-lg hover:shadow-xl transition transform hover:-translate-y-1">
-                        <div class="text-4xl mb-4">🍰</div>
-                        <h4 class="text-xl font-bold text-gray-800 mb-2">割合の直感</h4>
-                        <p class="text-gray-600 text-sm">
-                            「1あたり」で考える方法を学びます
-                        </p>
-                        <div class="mt-4 text-sm text-pink-600 font-semibold">
-                            10つのステップ →
-                        </div>
-                    </a>
-
-                    <!-- モジュール5: 概数 -->
-                    <a href="/module/approximation" class="block p-6 bg-gradient-to-br from-purple-100 to-purple-200 rounded-lg hover:shadow-xl transition transform hover:-translate-y-1">
-                        <div class="text-4xl mb-4">🎯</div>
-                        <h4 class="text-xl font-bold text-gray-800 mb-2">概数・おおよその判断</h4>
-                        <p class="text-gray-600 text-sm">
-                            だいたいの数で考える方法を学びます
-                        </p>
-                        <div class="mt-4 text-sm text-purple-600 font-semibold">
-                            8つのステップ →
-                        </div>
-                    </a>
-
-                    <!-- モジュール6: 公式集 -->
-                    <a href="/module/formulas" class="block p-6 bg-gradient-to-br from-yellow-100 to-orange-200 rounded-lg hover:shadow-xl transition transform hover:-translate-y-1">
-                        <div class="text-4xl mb-4">📐</div>
-                        <h4 class="text-xl font-bold text-gray-800 mb-2">公式集</h4>
-                        <p class="text-gray-600 text-sm">
-                            全モジュールで学んだ公式をまとめて復習
-                        </p>
-                        <div class="mt-4 text-sm text-orange-600 font-semibold">
-                            5つのステップ →
-                        </div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 中学1年生の内容 -->
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <h3 class="text-2xl font-bold text-gray-800 mb-6">
-                    <i class="fas fa-graduation-cap mr-2 text-indigo-600"></i>
-                    中学1年生の内容
-                </h3>
-                <p class="text-gray-600 mb-6">
-                    基礎が身についたら、中学1年生の内容に進みましょう。
-                </p>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <!-- モジュール7: 正の数・負の数 -->
-                    <a href="/module/integers" class="block p-6 bg-gradient-to-br from-indigo-100 to-blue-200 rounded-lg hover:shadow-xl transition transform hover:-translate-y-1">
-                        <div class="text-4xl mb-4">➕➖</div>
-                        <h4 class="text-xl font-bold text-gray-800 mb-2">正の数・負の数</h4>
-                        <p class="text-gray-600 text-sm">
-                            マイナスの数を学びます
-                        </p>
-                        <div class="mt-4 text-sm text-indigo-600 font-semibold">
-                            5つのステップ →
-                        </div>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 進捗状況 -->
-            <div class="bg-white rounded-xl shadow-lg p-8">
-                <h3 class="text-2xl font-bold text-gray-800 mb-6">
-                    <i class="fas fa-chart-line mr-2"></i>
-                    あなたの進捗
-                </h3>
-                <div id="progress-container" class="space-y-4">
-                    <!-- 進捗はJavaScriptで動的に表示 -->
-                </div>
-            </div>
-        </div>
-
-        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-        <script src="/static/app.js"></script>
-    </body>
-    </html>
-  `)
-})
-
-// グラフ読解モジュールページ
-app.get('/module/graph_basics', (c) => {
-  return c.html(`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>グラフの読解 - 中学数学基礎概念支援アプリ</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <link href="/static/style.css" rel="stylesheet">
-    </head>
-    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
-        <!-- ナビゲーションバー -->
-        <nav class="bg-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 py-4">
-                <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold text-purple-600">
-                        <i class="fas fa-graduation-cap mr-2"></i>
-                        数学の冒険
-                    </h1>
-                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
-                        <i class="fas fa-home mr-2"></i>ホームに戻る
-                    </a>
-                </div>
-            </div>
-        </nav>
-
-        <!-- メインコンテンツ -->
-        <div class="max-w-5xl mx-auto px-4 py-8">
-            <!-- モジュールタイトル -->
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <div class="flex items-center gap-4 mb-4">
-                    <div class="text-6xl">📊</div>
-                    <div>
-                        <h2 class="text-3xl font-bold text-gray-800">グラフの読解</h2>
-                        <p class="text-gray-600 mt-2">グラフの見方を一つずつ、ゆっくり学びましょう</p>
-                    </div>
-                </div>
-
-                <!-- ステップナビゲーション -->
-                <div class="step-nav mt-8" id="step-nav">
-                    <!-- JavaScriptで動的に生成 -->
-                </div>
-            </div>
-
-            <!-- 学習コンテンツ -->
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8" id="content-area">
-                <!-- JavaScriptで動的に表示 -->
-            </div>
-
-            <!-- ナビゲーションボタン -->
-            <div class="flex justify-between items-center">
-                <button id="prev-btn" class="px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                    <i class="fas fa-arrow-left mr-2"></i>前へ
-                </button>
-                <div id="completion-message" class="hidden text-center">
-                    <div class="text-4xl mb-2">🎉</div>
-                    <p class="text-xl font-bold text-green-600">おめでとうございます！</p>
-                    <p class="text-gray-600 mt-2">グラフの読解モジュールを完了しました！</p>
-                </div>
-                <button id="next-btn" class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">
-                    次へ<i class="fas fa-arrow-right ml-2"></i>
-                </button>
-            </div>
-        </div>
-
-        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-        <script src="/static/app.js?v=5"></script>
-        <script src="/static/graph-module.js?v=5"></script>
-        <script src="/static/graph-learn-v3.js?v=5"></script>
-    </body>
-    </html>
-  `)
-})
-
-// モジュール2: 基数性の再構築
-app.get('/module/cardinality', (c) => {
-  return c.html(`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>基数性の再構築 - 中学数学基礎概念支援アプリ</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <link href="/static/style.css" rel="stylesheet">
-    </head>
-    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
-        <nav class="bg-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 py-4">
-                <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold text-purple-600">
-                        <i class="fas fa-graduation-cap mr-2"></i>数学の冒険
-                    </h1>
-                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
-                        <i class="fas fa-home mr-2"></i>ホームに戻る
-                    </a>
-                </div>
-            </div>
-        </nav>
-        <div class="max-w-5xl mx-auto px-4 py-8">
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <div class="flex items-center gap-4 mb-4">
-                    <div class="text-6xl">🔢</div>
-                    <div>
-                        <h2 class="text-3xl font-bold text-gray-800">基数性の再構築</h2>
-                        <p class="text-gray-600 mt-2">数字が表す「量」を理解しましょう</p>
-                    </div>
-                </div>
-                <div class="step-nav mt-8" id="step-nav"></div>
-            </div>
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8" id="content-area"></div>
-            <div class="flex justify-between items-center">
-                <button id="prev-btn" onclick="window.goToPreviousStep()" class="px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                    <i class="fas fa-arrow-left mr-2"></i>前へ
-                </button>
-                <div id="completion-message" class="hidden text-center">
-                    <div class="text-4xl mb-2">🎉</div>
-                    <p class="text-xl font-bold text-green-600">おめでとうございます！</p>
-                    <p class="text-gray-600 mt-2">基数性の再構築モジュールを完了しました！</p>
-                </div>
-                <button id="next-btn" class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">
-                    次へ<i class="fas fa-arrow-right ml-2"></i>
-                </button>
-            </div>
-        </div>
-        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-        <script src="/static/app.js"></script>
-        <script src="/static/module-cardinality.js"></script>
-        <script src="/static/learn-engine.js"></script>
-        <script>
-          document.addEventListener('DOMContentLoaded', function() {
-            if (window.cardinalitySteps && window.LearningEngine) {
-              window.LearningEngine.init('cardinality', window.cardinalitySteps);
-              window.LearningEngine.renderStepNavigation();
-              window.LearningEngine.renderStep(0);
-              window.LearningEngine.updateNavigationButtons();
-            }
-          });
-          function goToPreviousStep() {
-            if (window.LearningEngine && window.LearningEngine.currentStepIndex > 0) {
-              window.LearningEngine.goToStep(window.LearningEngine.currentStepIndex - 1);
-            }
-          }
-          function goToNextStep() {
-            if (window.LearningEngine) {
-              const idx = window.LearningEngine.currentStepIndex;
-              const total = window.LearningEngine.moduleSteps.length;
-              if (idx === total - 1) window.LearningEngine.completeModule();
-              else window.LearningEngine.goToStep(idx + 1);
-            }
-          }
-          window.goToPreviousStep = goToPreviousStep;
-          window.goToNextStep = goToNextStep;
-        </script>
-    </body>
-    </html>
-  `)
-})
-
-// モジュール3: 単位と量
-app.get('/module/units', (c) => {
-  return c.html(`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>単位と量 - 中学数学基礎概念支援アプリ</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <link href="/static/style.css" rel="stylesheet">
-    </head>
-    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
-        <nav class="bg-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 py-4">
-                <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold text-purple-600">
-                        <i class="fas fa-graduation-cap mr-2"></i>数学の冒険
-                    </h1>
-                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
-                        <i class="fas fa-home mr-2"></i>ホームに戻る
-                    </a>
-                </div>
-            </div>
-        </nav>
-        <div class="max-w-5xl mx-auto px-4 py-8">
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <div class="flex items-center gap-4 mb-4">
-                    <div class="text-6xl">📏</div>
-                    <div>
-                        <h2 class="text-3xl font-bold text-gray-800">単位と量</h2>
-                        <p class="text-gray-600 mt-2">単位を揃えて比べる方法を学びましょう</p>
-                    </div>
-                </div>
-                <div class="step-nav mt-8" id="step-nav"></div>
-            </div>
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8" id="content-area"></div>
-            <div class="flex justify-between items-center">
-                <button id="prev-btn" onclick="window.goToPreviousStep()" class="px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                    <i class="fas fa-arrow-left mr-2"></i>前へ
-                </button>
-                <div id="completion-message" class="hidden text-center">
-                    <div class="text-4xl mb-2">🎉</div>
-                    <p class="text-xl font-bold text-green-600">おめでとうございます！</p>
-                    <p class="text-gray-600 mt-2">単位と量モジュールを完了しました！</p>
-                </div>
-                <button id="next-btn" class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">
-                    次へ<i class="fas fa-arrow-right ml-2"></i>
-                </button>
-            </div>
-        </div>
-        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-        <script src="/static/app.js"></script>
-        <script src="/static/module-units.js"></script>
-        <script src="/static/learn-engine.js"></script>
-        <script>
-          document.addEventListener('DOMContentLoaded', function() {
-            if (window.unitsSteps && window.LearningEngine) {
-              window.LearningEngine.init('units', window.unitsSteps);
-              window.LearningEngine.renderStepNavigation();
-              window.LearningEngine.renderStep(0);
-              window.LearningEngine.updateNavigationButtons();
-            }
-          });
-          function goToPreviousStep() {
-            if (window.LearningEngine && window.LearningEngine.currentStepIndex > 0) {
-              window.LearningEngine.goToStep(window.LearningEngine.currentStepIndex - 1);
-            }
-          }
-          function goToNextStep() {
-            if (window.LearningEngine) {
-              const idx = window.LearningEngine.currentStepIndex;
-              const total = window.LearningEngine.moduleSteps.length;
-              if (idx === total - 1) window.LearningEngine.completeModule();
-              else window.LearningEngine.goToStep(idx + 1);
-            }
-          }
-          window.goToPreviousStep = goToPreviousStep;
-          window.goToNextStep = goToNextStep;
-        </script>
-    </body>
-    </html>
-  `)
-})
-
-// モジュール4: 割合の直感
-app.get('/module/proportions', (c) => {
-  return c.html(`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>割合の直感 - 中学数学基礎概念支援アプリ</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <link href="/static/style.css" rel="stylesheet">
-    </head>
-    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
-        <nav class="bg-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 py-4">
-                <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold text-purple-600">
-                        <i class="fas fa-graduation-cap mr-2"></i>数学の冒険
-                    </h1>
-                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
-                        <i class="fas fa-home mr-2"></i>ホームに戻る
-                    </a>
-                </div>
-            </div>
-        </nav>
-        <div class="max-w-5xl mx-auto px-4 py-8">
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <div class="flex items-center gap-4 mb-4">
-                    <div class="text-6xl">🍰</div>
-                    <div>
-                        <h2 class="text-3xl font-bold text-gray-800">割合の直感</h2>
-                        <p class="text-gray-600 mt-2">「1あたり」で考える方法を学びましょう</p>
-                    </div>
-                </div>
-                <div class="step-nav mt-8" id="step-nav"></div>
-            </div>
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8" id="content-area"></div>
-            <div class="flex justify-between items-center">
-                <button id="prev-btn" onclick="window.goToPreviousStep()" class="px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                    <i class="fas fa-arrow-left mr-2"></i>前へ
-                </button>
-                <div id="completion-message" class="hidden text-center">
-                    <div class="text-4xl mb-2">🎉</div>
-                    <p class="text-xl font-bold text-green-600">おめでとうございます！</p>
-                    <p class="text-gray-600 mt-2">割合の直感モジュールを完了しました！</p>
-                </div>
-                <button id="next-btn" class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">
-                    次へ<i class="fas fa-arrow-right ml-2"></i>
-                </button>
-            </div>
-        </div>
-        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-        <script src="/static/app.js"></script>
-        <script src="/static/module-proportions.js"></script>
-        <script src="/static/learn-engine.js"></script>
-        <script>
-          document.addEventListener('DOMContentLoaded', function() {
-            if (window.proportionsSteps && window.LearningEngine) {
-              window.LearningEngine.init('proportions', window.proportionsSteps);
-              window.LearningEngine.renderStepNavigation();
-              window.LearningEngine.renderStep(0);
-              window.LearningEngine.updateNavigationButtons();
-            }
-          });
-          function goToPreviousStep() {
-            if (window.LearningEngine && window.LearningEngine.currentStepIndex > 0) {
-              window.LearningEngine.goToStep(window.LearningEngine.currentStepIndex - 1);
-            }
-          }
-          function goToNextStep() {
-            if (window.LearningEngine) {
-              const idx = window.LearningEngine.currentStepIndex;
-              const total = window.LearningEngine.moduleSteps.length;
-              if (idx === total - 1) window.LearningEngine.completeModule();
-              else window.LearningEngine.goToStep(idx + 1);
-            }
-          }
-          window.goToPreviousStep = goToPreviousStep;
-          window.goToNextStep = goToNextStep;
-        </script>
-    </body>
-    </html>
-  `)
-})
-
-// モジュール5: 概数・おおよその判断
-app.get('/module/approximation', (c) => {
-  return c.html(`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>概数・おおよその判断 - 中学数学基礎概念支援アプリ</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <link href="/static/style.css" rel="stylesheet">
-    </head>
-    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
-        <nav class="bg-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 py-4">
-                <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold text-purple-600">
-                        <i class="fas fa-graduation-cap mr-2"></i>数学の冒険
-                    </h1>
-                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
-                        <i class="fas fa-home mr-2"></i>ホームに戻る
-                    </a>
-                </div>
-            </div>
-        </nav>
-        <div class="max-w-5xl mx-auto px-4 py-8">
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <div class="flex items-center gap-4 mb-4">
-                    <div class="text-6xl">⚖️</div>
-                    <div>
-                        <h2 class="text-3xl font-bold text-gray-800">概数・おおよその判断</h2>
-                        <p class="text-gray-600 mt-2">だいたいの数で考える方法を学びましょう</p>
-                    </div>
-                </div>
-                <div class="step-nav mt-8" id="step-nav"></div>
-            </div>
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8" id="content-area"></div>
-            <div class="flex justify-between items-center">
-                <button id="prev-btn" onclick="window.goToPreviousStep()" class="px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                    <i class="fas fa-arrow-left mr-2"></i>前へ
-                </button>
-                <div id="completion-message" class="hidden text-center">
-                    <div class="text-4xl mb-2">🎉</div>
-                    <p class="text-xl font-bold text-green-600">おめでとうございます！</p>
-                    <p class="text-gray-600 mt-2">概数・おおよその判断モジュールを完了しました！</p>
-                </div>
-                <button id="next-btn" class="px-6 py-3 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition">
-                    次へ<i class="fas fa-arrow-right ml-2"></i>
-                </button>
-            </div>
-        </div>
-        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-        <script src="/static/app.js"></script>
-        <script src="/static/module-approximation.js"></script>
-        <script src="/static/learn-engine.js"></script>
-        <script>
-          document.addEventListener('DOMContentLoaded', function() {
-            if (window.approximationSteps && window.LearningEngine) {
-              window.LearningEngine.init('approximation', window.approximationSteps);
-              window.LearningEngine.renderStepNavigation();
-              window.LearningEngine.renderStep(0);
-              window.LearningEngine.updateNavigationButtons();
-            }
-          });
-          function goToPreviousStep() {
-            if (window.LearningEngine && window.LearningEngine.currentStepIndex > 0) {
-              window.LearningEngine.goToStep(window.LearningEngine.currentStepIndex - 1);
-            }
-          }
-          function goToNextStep() {
-            if (window.LearningEngine) {
-              const idx = window.LearningEngine.currentStepIndex;
-              const total = window.LearningEngine.moduleSteps.length;
-              if (idx === total - 1) window.LearningEngine.completeModule();
-              else window.LearningEngine.goToStep(idx + 1);
-            }
-          }
-          window.goToPreviousStep = goToPreviousStep;
-          window.goToNextStep = goToNextStep;
-        </script>
-    </body>
-    </html>
-  `)
-})
-
-// 用語集ページ
-app.get('/glossary', async (c) => {
-  const { DB } = c.env
-  const result = await DB.prepare('SELECT * FROM glossary ORDER BY term ASC').all()
-  
-  return c.html(`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>用語集 - 中学数学基礎概念支援アプリ</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <link href="/static/style.css" rel="stylesheet">
-    </head>
-    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
-        <nav class="bg-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 py-4">
-                <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold text-purple-600">
-                        <i class="fas fa-book mr-2"></i>
-                        用語集
-                    </h1>
-                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
-                        <i class="fas fa-home mr-2"></i>ホームに戻る
-                    </a>
-                </div>
-            </div>
-        </nav>
-
-        <div class="max-w-5xl mx-auto px-4 py-8">
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <h2 class="text-2xl font-bold text-gray-800 mb-6">学習した用語を確認しましょう</h2>
-                
-                <div class="mb-6">
-                    <input type="text" id="search-input" 
-                           placeholder="用語を検索..." 
-                           class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-blue-500 focus:outline-none">
-                </div>
-
-                <div id="glossary-list" class="space-y-4">
-                    ${result.results.map((term: any) => `
-                      <div class="glossary-item border-2 border-gray-200 rounded-lg p-6 hover:border-blue-400 transition">
-                        <h3 class="text-xl font-bold text-blue-600 mb-2">${term.term}</h3>
-                        <p class="text-gray-700 mb-3">${term.definition}</p>
-                        ${term.example ? `
-                          <div class="bg-blue-50 p-3 rounded-lg">
-                            <span class="font-semibold text-blue-800">例:</span>
-                            <span class="text-gray-700">${term.example}</span>
-                          </div>
-                        ` : ''}
-                      </div>
-                    `).join('')}
-                </div>
-            </div>
-        </div>
-
-        <script>
-          // 検索機能
-          document.getElementById('search-input').addEventListener('input', (e) => {
-            const searchTerm = e.target.value.toLowerCase();
-            const items = document.querySelectorAll('.glossary-item');
-            
-            items.forEach(item => {
-              const text = item.textContent.toLowerCase();
-              if (text.includes(searchTerm)) {
-                item.style.display = 'block';
-              } else {
-                item.style.display = 'none';
-              }
-            });
-          });
-        </script>
-    </body>
-    </html>
-  `)
-})
-
-// 達成記録ページ（生徒用）
-app.get('/student/achievements', async (c) => {
-  const { DB } = c.env
-  const userId = 'default_user'
-  const result = await DB.prepare(
-    'SELECT * FROM achievement_log WHERE user_id = ? ORDER BY achieved_at DESC'
-  ).bind(userId).all()
-  
-  const totalPoints = result.results.reduce((sum: number, a: any) => sum + (a.points || 0), 0)
-  
-  return c.html(`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>達成記録 - 中学数学基礎概念支援アプリ</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <link href="/static/style.css" rel="stylesheet">
-    </head>
-    <body class="bg-gradient-to-br from-yellow-50 to-orange-50 min-h-screen">
-        <nav class="bg-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 py-4">
-                <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold text-yellow-600">
-                        <i class="fas fa-trophy mr-2"></i>
-                        達成記録
-                    </h1>
-                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
-                        <i class="fas fa-home mr-2"></i>ホームに戻る
-                    </a>
-                </div>
-            </div>
-        </nav>
-
-        <div class="max-w-5xl mx-auto px-4 py-8">
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <div class="text-center mb-8">
-                    <div class="text-6xl mb-4">🏆</div>
-                    <h2 class="text-3xl font-bold text-gray-800 mb-2">合計ポイント</h2>
-                    <div class="text-5xl font-bold text-yellow-500">${totalPoints}</div>
-                </div>
-
-                ${result.results.length === 0 ? `
-                  <div class="text-center py-12 text-gray-500">
-                    <i class="fas fa-rocket text-6xl mb-4"></i>
-                    <p class="text-xl">まだ達成記録がありません</p>
-                    <p class="mt-2">学習を始めて達成を積み重ねましょう！</p>
-                  </div>
-                ` : `
-                  <div class="space-y-4">
-                    ${result.results.map((achievement: any) => `
-                      <div class="border-2 border-yellow-200 rounded-lg p-6 bg-gradient-to-r from-yellow-50 to-white hover:shadow-lg transition">
-                        <div class="flex items-start justify-between">
-                          <div class="flex-1">
-                            <h3 class="text-xl font-bold text-gray-800 mb-2">
-                              <i class="fas fa-star text-yellow-500 mr-2"></i>
-                              ${achievement.title}
-                            </h3>
-                            ${achievement.description ? `
-                              <p class="text-gray-600 mb-3">${achievement.description}</p>
-                            ` : ''}
-                            <div class="text-sm text-gray-500">
-                              ${new Date(achievement.achieved_at).toLocaleString('ja-JP')}
-                            </div>
-                          </div>
-                          <div class="ml-4">
-                            <div class="achievement-badge">
-                              +${achievement.points}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    `).join('')}
-                  </div>
-                `}
-            </div>
-        </div>
-    </body>
-    </html>
-  `)
-})
-
-// アフリカ都市カードコレクションページ
-app.get('/cards', async (c) => {
-  const { DB } = c.env
-  const userId = 'default_user'
-  
-  // ユーザーがアンロックしたカード
-  const userCards = await DB.prepare(
-    'SELECT * FROM africa_cards WHERE user_id = ? ORDER BY unlocked_at DESC'
-  ).bind(userId).all()
-  
-  // システムカード（全カード）
-  const allCards = await DB.prepare(
-    'SELECT * FROM africa_cards WHERE user_id = ? ORDER BY card_id'
-  ).bind('system').all()
-  
-  const unlockedIds = new Set(userCards.results.map((c: any) => c.card_id))
-  
-  return c.html(`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>カードコレクション - 中学数学基礎概念支援アプリ</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <link href="/static/style.css" rel="stylesheet">
-    </head>
-    <body class="bg-gradient-to-br from-green-50 to-blue-50 min-h-screen">
-        <nav class="bg-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 py-4">
-                <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold text-green-600">
-                        <i class="fas fa-image mr-2"></i>
-                        アフリカ都市カードコレクション
-                    </h1>
-                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
-                        <i class="fas fa-home mr-2"></i>ホームに戻る
-                    </a>
-                </div>
-            </div>
-        </nav>
-
-        <div class="max-w-7xl mx-auto px-4 py-8">
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <div class="text-center mb-8">
-                    <h2 class="text-2xl font-bold text-gray-800 mb-4">
-                        コレクション進捗: ${unlockedIds.size} / ${allCards.results.length}
-                    </h2>
-                    <div class="progress-bar max-w-md mx-auto">
-                        <div class="progress-fill" style="width: ${(unlockedIds.size / allCards.results.length) * 100}%"></div>
-                    </div>
-                    <p class="text-gray-600 mt-4">学習を進めて、新しいカードをゲットしましょう！</p>
-                </div>
-
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    ${allCards.results.map((card: any) => {
-                      const isUnlocked = unlockedIds.has(card.card_id)
-                      return `
-                        <div class="africa-card ${!isUnlocked ? 'africa-card-locked' : ''} bg-white rounded-xl shadow-lg overflow-hidden">
-                          <div class="h-48 bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
-                            ${isUnlocked ? `
-                              <div class="text-6xl">🌍</div>
-                            ` : `
-                              <div class="text-6xl">🔒</div>
-                            `}
-                          </div>
-                          <div class="p-6">
-                            <h3 class="text-2xl font-bold text-gray-800 mb-2">
-                              ${isUnlocked ? card.city_name : '???'}
-                            </h3>
-                            <p class="text-gray-600 mb-2">
-                              <i class="fas fa-flag mr-2"></i>
-                              ${isUnlocked ? card.country : '???'}
-                            </p>
-                            ${isUnlocked ? `
-                              <p class="text-sm text-gray-600 mb-3">
-                                <i class="fas fa-users mr-2"></i>
-                                ${card.population}
-                              </p>
-                              <p class="text-gray-700">${card.description}</p>
-                            ` : `
-                              <p class="text-gray-500 text-sm mt-4">
-                                学習を進めてアンロックしよう！
-                              </p>
-                            `}
-                          </div>
-                        </div>
-                      `
-                    }).join('')}
-                </div>
-            </div>
-        </div>
-    </body>
-    </html>
-  `)
-})
-
-// モジュール6: 公式集
-app.get('/module/formulas', (c) => {
-  return c.html(`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>公式集 - 中学数学基礎概念支援アプリ</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <link href="/static/style.css" rel="stylesheet">
-    </head>
-    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
-        <nav class="bg-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 py-4">
-                <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold text-orange-600">
-                        <i class="fas fa-graduation-cap mr-2"></i>数学の冒険
-                    </h1>
-                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
-                        <i class="fas fa-home mr-2"></i>ホームに戻る
-                    </a>
-                </div>
-            </div>
-        </nav>
-        <div class="max-w-5xl mx-auto px-4 py-8">
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <div class="flex items-center gap-4 mb-4">
-                    <div class="text-6xl">📐</div>
-                    <div>
-                        <h2 class="text-3xl font-bold text-gray-800">公式集</h2>
-                        <p class="text-gray-600 mt-2">全モジュールで学んだ公式をまとめて復習しましょう</p>
-                    </div>
-                </div>
-                <div class="step-nav mt-8" id="step-nav"></div>
-            </div>
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8" id="content-area"></div>
-            <div class="flex justify-between items-center">
-                <button id="prev-btn" onclick="window.goToPreviousStep()" class="px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                    <i class="fas fa-arrow-left mr-2"></i>前へ
-                </button>
-                <button id="next-btn" onclick="window.goToNextStep()" class="px-6 py-3 bg-orange-500 text-white rounded-lg hover:bg-orange-600 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                    次へ<i class="fas fa-arrow-right ml-2"></i>
-                </button>
-            </div>
-            <div id="completion-banner" class="hidden fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-green-400 to-blue-500 text-white px-8 py-4 rounded-full shadow-2xl animate-bounce">
-                <i class="fas fa-trophy mr-2"></i>
-                公式集モジュールを完了しました！
-            </div>
-        </div>
-        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-        <script src="/static/app.js"></script>
-        <script src="/static/module-formulas.js"></script>
-        <script src="/static/learn-engine.js"></script>
-        <script>
-          // 公式集モジュールを初期化
-          document.addEventListener('DOMContentLoaded', function() {
-            console.log('=== 公式集ページ初期化 ===');
-            
-            if (!window.formulasSteps || window.formulasSteps.length === 0) {
-              console.error('❌ 公式集ステップデータが見つかりません');
-              return;
-            }
-            
-            console.log('✅ 公式集ステップデータ取得:', window.formulasSteps.length, 'ステップ');
-            
-            // 学習エンジンを初期化
-            if (window.LearningEngine) {
-              const success = window.LearningEngine.init('formulas', window.formulasSteps);
-              if (success) {
-                window.LearningEngine.renderStepNavigation();
-                window.LearningEngine.renderStep(0);
-                window.LearningEngine.updateNavigationButtons();
-                console.log('✅ 公式集モジュール初期化完了');
-              }
-            }
-          });
-          
-          // グローバル関数を定義
-          function goToPreviousStep() {
-            if (window.LearningEngine && window.LearningEngine.currentStepIndex > 0) {
-              window.LearningEngine.goToStep(window.LearningEngine.currentStepIndex - 1);
-            }
-          }
-          
-          function goToNextStep() {
-            if (window.LearningEngine) {
-              const currentIndex = window.LearningEngine.currentStepIndex;
-              const totalSteps = window.LearningEngine.moduleSteps.length;
-              if (currentIndex === totalSteps - 1) {
-                window.LearningEngine.completeModule();
-              } else {
-                window.LearningEngine.goToStep(currentIndex + 1);
-              }
-            }
-          }
-          
-          window.goToPreviousStep = goToPreviousStep;
-          window.goToNextStep = goToNextStep;
-        </script>
-    </body>
-    </html>
-  `)
-})
-
-// モジュール7: 正の数・負の数
-app.get('/module/integers', (c) => {
-  return c.html(`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>正の数・負の数 - 中学数学基礎概念支援アプリ</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <link href="/static/style.css" rel="stylesheet">
-    </head>
-    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
-        <nav class="bg-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 py-4">
-                <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold text-indigo-600">
-                        <i class="fas fa-graduation-cap mr-2"></i>数学の冒険
-                    </h1>
-                    <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
-                        <i class="fas fa-home mr-2"></i>ホームに戻る
-                    </a>
-                </div>
-            </div>
-        </nav>
-        <div class="max-w-5xl mx-auto px-4 py-8">
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <div class="flex items-center gap-4 mb-4">
-                    <div class="text-6xl">➕➖</div>
-                    <div>
-                        <h2 class="text-3xl font-bold text-gray-800">正の数・負の数</h2>
-                        <p class="text-gray-600 mt-2">0より大きい数と小さい数を理解しましょう</p>
-                    </div>
-                </div>
-                <div class="step-nav mt-8" id="step-nav"></div>
-            </div>
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8" id="content-area"></div>
-            <div class="flex justify-between items-center">
-                <button id="prev-btn" onclick="window.goToPreviousStep()" class="px-6 py-3 bg-gray-400 text-white rounded-lg hover:bg-gray-500 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                    <i class="fas fa-arrow-left mr-2"></i>前へ
-                </button>
-                <button id="next-btn" onclick="window.goToNextStep()" class="px-6 py-3 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition disabled:opacity-50 disabled:cursor-not-allowed">
-                    次へ<i class="fas fa-arrow-right ml-2"></i>
-                </button>
-            </div>
-            <div id="completion-banner" class="hidden fixed bottom-8 left-1/2 transform -translate-x-1/2 bg-gradient-to-r from-green-400 to-blue-500 text-white px-8 py-4 rounded-full shadow-2xl animate-bounce">
-                <i class="fas fa-trophy mr-2"></i>
-                正の数・負の数モジュールを完了しました！
-            </div>
-        </div>
-        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-        <script src="/static/app.js"></script>
-        <script src="/static/module-integers.js"></script>
-        <script src="/static/learn-engine.js"></script>
-        <script>
-          // 正の数・負の数モジュールを初期化
-          document.addEventListener('DOMContentLoaded', function() {
-            console.log('=== 正の数・負の数ページ初期化 ===');
-            
-            if (!window.integersSteps || window.integersSteps.length === 0) {
-              console.error('❌ 正の数・負の数ステップデータが見つかりません');
-              return;
-            }
-            
-            console.log('✅ 正の数・負の数ステップデータ取得:', window.integersSteps.length, 'ステップ');
-            
-            // 学習エンジンを初期化
-            if (window.LearningEngine) {
-              const success = window.LearningEngine.init('integers', window.integersSteps);
-              if (success) {
-                window.LearningEngine.renderStepNavigation();
-                window.LearningEngine.renderStep(0);
-                window.LearningEngine.updateNavigationButtons();
-                console.log('✅ 正の数・負の数モジュール初期化完了');
-              }
-            }
-          });
-          
-          // グローバル関数を定義
-          function goToPreviousStep() {
-            if (window.LearningEngine && window.LearningEngine.currentStepIndex > 0) {
-              window.LearningEngine.goToStep(window.LearningEngine.currentStepIndex - 1);
-            }
-          }
-          
-          function goToNextStep() {
-            if (window.LearningEngine) {
-              const currentIndex = window.LearningEngine.currentStepIndex;
-              const totalSteps = window.LearningEngine.moduleSteps.length;
-              if (currentIndex === totalSteps - 1) {
-                window.LearningEngine.completeModule();
-              } else {
-                window.LearningEngine.goToStep(currentIndex + 1);
-              }
-            }
-          }
-          
-          window.goToPreviousStep = goToPreviousStep;
-          window.goToNextStep = goToNextStep;
-        </script>
-    </body>
-    </html>
-  `)
-})
 
 // 生徒用汎用モジュールビューアー
 app.get('/student/modules/:id', async (c) => {
   const moduleId = c.req.param('id');
+  const isPreview = c.req.query('preview') === 'true';
   const { DB } = c.env;
   
   const module = await DB.prepare('SELECT * FROM modules WHERE id = ?').bind(moduleId).first();
@@ -1706,6 +1623,9 @@ app.get('/student/modules/:id', async (c) => {
   if (!module) {
     return c.text('Module not found', 404);
   }
+
+  const homeLink = isPreview ? '/teacher/preview' : '/student';
+  const homeText = isPreview ? 'プレビュー画面に戻る' : 'ホームに戻る';
 
   return c.html(`
     <!DOCTYPE html>
@@ -1737,8 +1657,8 @@ app.get('/student/modules/:id', async (c) => {
                         <i class="fas fa-graduation-cap mr-2"></i>
                         ${module.name}
                     </h1>
-                    <a href="/student" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
-                        <i class="fas fa-home mr-2"></i>ホームに戻る
+                    <a href="${homeLink}" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
+                        <i class="fas fa-home mr-2"></i>${homeText}
                     </a>
                 </div>
             </div>
@@ -1768,6 +1688,13 @@ app.get('/student/modules/:id', async (c) => {
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script>
+          // Auth Token Setup
+          const token = localStorage.getItem('token');
+          if (token) {
+              axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+          } else {
+              window.location.href = '/login';
+          }
             const MODULE_ID = ${moduleId};
             let steps = [];
             let currentStepIndex = 0;
@@ -1778,7 +1705,7 @@ app.get('/student/modules/:id', async (c) => {
 
             async function loadSteps() {
                 try {
-                    const res = await axios.get('/api/teacher/steps?module_id=' + MODULE_ID);
+                    const res = await axios.get('/api/student/steps?module_id=' + MODULE_ID);
                     steps = res.data.steps;
                     
                     if (steps.length === 0) {
@@ -1823,7 +1750,7 @@ app.get('/student/modules/:id', async (c) => {
                 document.getElementById('prev-btn').onclick = () => loadStepContent(index - 1);
                 document.getElementById('next-btn').onclick = () => {
                     if (index < steps.length - 1) loadStepContent(index + 1);
-                    else alert('モジュール完了！'); 
+                    else { alert('モジュール完了！'); window.location.href = '/student'; }
                 };
 
                 const contentArea = document.getElementById('content-area');
@@ -1831,8 +1758,8 @@ app.get('/student/modules/:id', async (c) => {
 
                 try {
                     const [blocksRes, questionsRes] = await Promise.all([
-                        axios.get('/api/teacher/content-blocks?step_id=' + step.id),
-                        axios.get('/api/teacher/questions?step_id=' + step.id)
+                        axios.get('/api/student/content-blocks?step_id=' + step.id),
+                        axios.get('/api/student/questions?step_id=' + step.id)
                     ]);
 
                     renderContent(step, blocksRes.data.blocks, questionsRes.data.questions);
@@ -2083,6 +2010,29 @@ app.post('/api/teacher/phases', async (c) => {
   return c.json({ success: true, id: result.meta.last_row_id })
 })
 
+// フェーズ更新
+app.put('/api/teacher/phases/:id', async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  const { name, description, order_index } = await c.req.json()
+  
+  await DB.prepare(
+    'UPDATE phases SET name = ?, description = ?, order_index = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+  ).bind(name, description || null, order_index || 0, id).run()
+  
+  return c.json({ success: true })
+})
+
+// フェーズ削除
+app.delete('/api/teacher/phases/:id', async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  
+  await DB.prepare('DELETE FROM phases WHERE id = ?').bind(id).run()
+  
+  return c.json({ success: true })
+})
+
 // モジュール一覧取得
 app.get('/api/teacher/modules', async (c) => {
   const { DB } = c.env
@@ -2102,13 +2052,42 @@ app.get('/api/teacher/modules', async (c) => {
 // モジュール作成
 app.post('/api/teacher/modules', async (c) => {
   const { DB } = c.env
-  const { phase_id, name, description, icon, color, order_index } = await c.req.json()
+  try {
+    const { phase_id, name, description, icon, color, order_index } = await c.req.json()
+    console.log('Creating module:', { phase_id, name });
+    
+    const result = await DB.prepare(
+      'INSERT INTO modules (phase_id, name, description, icon, color, order_index) VALUES (?, ?, ?, ?, ?, ?)'
+    ).bind(phase_id, name, description || null, icon || null, color || null, order_index || 0).run()
+    
+    return c.json({ success: true, id: result.meta.last_row_id })
+  } catch(e) {
+    console.error('Module Create Error:', e);
+    return c.json({ error: 'Failed to create module' }, 500)
+  }
+})
+
+// モジュール更新
+app.put('/api/teacher/modules/:id', async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  const { name, description, icon, color, order_index } = await c.req.json()
   
-  const result = await DB.prepare(
-    'INSERT INTO modules (phase_id, name, description, icon, color, order_index) VALUES (?, ?, ?, ?, ?, ?)'
-  ).bind(phase_id, name, description || null, icon || null, color || null, order_index || 0).run()
+  await DB.prepare(
+    'UPDATE modules SET name = ?, description = ?, icon = ?, color = ?, order_index = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+  ).bind(name, description || null, icon || null, color || null, order_index || 0, id).run()
   
-  return c.json({ success: true, id: result.meta.last_row_id })
+  return c.json({ success: true })
+})
+
+// モジュール削除
+app.delete('/api/teacher/modules/:id', async (c) => {
+  const { DB } = c.env
+  const id = c.req.param('id')
+  
+  await DB.prepare('DELETE FROM modules WHERE id = ?').bind(id).run()
+  
+  return c.json({ success: true })
 })
 
 // ステップ一覧取得
@@ -2377,7 +2356,7 @@ app.get('/teacher/sections', (c) => {
                         セクション管理（学年単位）
                     </h1>
                     <div class="flex gap-4">
-                        <a href="/" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
+                        <a href="/teacher" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
                             <i class="fas fa-arrow-left mr-2"></i>トップへ戻る
                         </a>
                         <a href="/student" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-400 transition">
@@ -2389,23 +2368,24 @@ app.get('/teacher/sections', (c) => {
         </nav>
 
         <div class="max-w-7xl mx-auto px-4 py-8">
-            <!-- 新規作成フォーム -->
+            <!-- 新規作成/編集フォーム -->
             <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
-                <h2 class="text-xl font-bold text-gray-800 mb-4">
+                <h2 class="text-xl font-bold text-gray-800 mb-4" id="form-title">
                     <i class="fas fa-plus-circle mr-2 text-green-500"></i>
                     新しいセクションを作成
                 </h2>
-                <form id="create-section-form" class="space-y-4">
+                <form id="section-form" class="space-y-4">
+                    <input type="hidden" name="id" id="edit-id">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">セクション名 *</label>
-                            <input type="text" name="name" required 
+                            <input type="text" name="name" id="input-name" required 
                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                                    placeholder="例：中学1年生の数学">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">学年レベル</label>
-                            <input type="text" name="grade_level" 
+                            <input type="text" name="grade_level" id="input-grade_level"
                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                                    placeholder="例：中1、高2">
                         </div>
@@ -2413,20 +2393,25 @@ app.get('/teacher/sections', (c) => {
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">教科</label>
-                            <input type="text" name="subject" 
+                            <input type="text" name="subject" id="input-subject"
                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                                    placeholder="例：数学、英語、理科">
                         </div>
                     </div>
                     <div>
                         <label class="block text-sm font-medium text-gray-700 mb-2">説明</label>
-                        <textarea name="description" rows="2" 
+                        <textarea name="description" id="input-description" rows="2" 
                                   class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                                   placeholder="このセクションで学ぶ内容"></textarea>
                     </div>
-                    <button type="submit" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
-                        <i class="fas fa-plus mr-2"></i>セクションを作成
-                    </button>
+                    <div class="flex gap-4">
+                        <button type="submit" id="submit-btn" class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                            <i class="fas fa-plus mr-2"></i>作成
+                        </button>
+                        <button type="button" id="cancel-btn" onclick="resetForm()" class="hidden px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
+                            キャンセル
+                        </button>
+                    </div>
                 </form>
             </div>
 
@@ -2444,21 +2429,30 @@ app.get('/teacher/sections', (c) => {
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script>
+          // Auth Token Setup
+          const token = localStorage.getItem('token');
+          if (token) {
+              axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+          } else {
+              window.location.href = '/login';
+          }
+          let sectionsData = [];
+
           // セクション一覧を読み込み
           async function loadSections() {
             try {
               const response = await axios.get('/api/teacher/sections');
-              const sections = response.data.sections;
+              sectionsData = response.data.sections;
               
               const listEl = document.getElementById('sections-list');
               
-              if (sections.length === 0) {
+              if (sectionsData.length === 0) {
                 listEl.innerHTML = '<p class="text-gray-500 text-center py-8">まだセクションが登録されていません</p>';
                 return;
               }
               
-              listEl.innerHTML = sections.map(section => \`
-                <div class="border-2 border-gray-200 rounded-lg p-6 hover:border-indigo-400 transition">
+              listEl.innerHTML = sectionsData.map(section => \`
+                <div class="border-2 border-gray-200 rounded-lg p-6 hover:border-indigo-400 transition bg-white shadow-sm">
                   <div class="flex justify-between items-start">
                     <div class="flex-1">
                       <h3 class="text-xl font-bold text-gray-800 mb-2">\${section.name}</h3>
@@ -2469,31 +2463,46 @@ app.get('/teacher/sections', (c) => {
                         <span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
                           <i class="fas fa-book mr-1"></i>\${section.subject || '教科未設定'}
                         </span>
+                        <span class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-mono cursor-pointer" onclick="navigator.clipboard.writeText('\${section.access_code}');alert('コードをコピーしました')">
+                          <i class="fas fa-key mr-1"></i>Code: \${section.access_code || '---'} <i class="fas fa-copy ml-1 opacity-50"></i>
+                        </span>
                       </div>
                       <p class="text-gray-600 mb-3">\${section.description || '説明なし'}</p>
-                      <p class="text-sm text-gray-400">ID: \${section.id} | 作成: \${new Date(section.created_at).toLocaleDateString('ja-JP')}</p>
+                      <p class="text-sm text-gray-400">ID: \${section.id}</p>
                     </div>
-                    <div class="flex gap-2 ml-4">
-                      <a href="/teacher/phases?section_id=\${section.id}" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm">
+                    <div class="flex gap-2 ml-4 flex-col">
+                      <a href="/teacher/phases?section_id=\${section.id}" class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition text-sm text-center">
                         <i class="fas fa-layer-group mr-1"></i>フェーズ管理
                       </a>
-                      <button onclick="deleteSection(\${section.id})" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm">
-                        <i class="fas fa-trash mr-1"></i>削除
-                      </button>
+                      <div class="flex gap-2">
+                        <button onclick="editSection(\${section.id})" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm">
+                            <i class="fas fa-pen mr-1"></i>編集
+                        </button>
+                        <button onclick="deleteSection(\${section.id})" class="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm">
+                            <i class="fas fa-trash mr-1"></i>削除
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
               \`).join('');
             } catch (error) {
               console.error('セクション読み込みエラー:', error);
+              if (error.response && error.response.status === 401) {
+                  // 認証エラーの場合はログインページへ
+                  window.location.href = '/login';
+                  return;
+              }
               document.getElementById('sections-list').innerHTML = '<p class="text-red-500 text-center py-8">エラーが発生しました</p>';
             }
           }
           
-          // セクション作成
-          document.getElementById('create-section-form').addEventListener('submit', async (e) => {
+          // セクション作成・更新
+          document.getElementById('section-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
+            const id = document.getElementById('edit-id').value;
+            
             const data = {
               name: formData.get('name'),
               grade_level: formData.get('grade_level'),
@@ -2502,25 +2511,68 @@ app.get('/teacher/sections', (c) => {
             };
             
             try {
-              await axios.post('/api/teacher/sections', data);
-              alert('セクションを作成しました！');
-              e.target.reset();
+              if (id) {
+                  // 更新
+                  await axios.put('/api/teacher/sections/' + id, data);
+                  alert('セクションを更新しました！');
+              } else {
+                  // 作成
+                  await axios.post('/api/teacher/sections', data);
+                  alert('セクションを作成しました！');
+              }
+              resetForm();
               loadSections();
             } catch (error) {
-              console.error('セクション作成エラー:', error);
+              console.error('エラー:', error);
               alert('エラーが発生しました');
             }
           });
           
-          // セクション削除
-          async function deleteSection(id) {
-            if (!confirm('本当にこのセクションを削除しますか？関連するフェーズ・モジュール・ステップも削除されます。')) {
-              return;
-            }
-            alert('削除機能は今後実装予定です（ID: ' + id + '）');
+          // 編集モードへ切り替え
+          function editSection(id) {
+              const section = sectionsData.find(s => s.id === id);
+              if (!section) return;
+              
+              document.getElementById('edit-id').value = section.id;
+              document.getElementById('input-name').value = section.name;
+              document.getElementById('input-grade_level').value = section.grade_level || '';
+              document.getElementById('input-subject').value = section.subject || '';
+              document.getElementById('input-description').value = section.description || '';
+              
+              document.getElementById('form-title').innerHTML = '<i class="fas fa-pen mr-2 text-blue-500"></i>セクションを編集';
+              document.getElementById('submit-btn').innerHTML = '<i class="fas fa-save mr-2"></i>更新';
+              document.getElementById('submit-btn').className = 'flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition';
+              document.getElementById('cancel-btn').classList.remove('hidden');
+              
+              window.scrollTo({ top: 0, behavior: 'smooth' });
           }
           
-          // ページ読み込み時にセクション一覧を取得
+          // フォームリセット
+          function resetForm() {
+              document.getElementById('section-form').reset();
+              document.getElementById('edit-id').value = '';
+              
+              document.getElementById('form-title').innerHTML = '<i class="fas fa-plus-circle mr-2 text-green-500"></i>新しいセクションを作成';
+              document.getElementById('submit-btn').innerHTML = '<i class="fas fa-plus mr-2"></i>作成';
+              document.getElementById('submit-btn').className = 'flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition';
+              document.getElementById('cancel-btn').classList.add('hidden');
+          }
+          
+          // セクション削除
+          async function deleteSection(id) {
+            if (!confirm('本当にこのセクションを削除しますか？関連するフェーズ・モジュール・ステップも全て削除されます。')) {
+              return;
+            }
+            try {
+                await axios.delete('/api/teacher/sections/' + id);
+                alert('削除しました');
+                loadSections();
+            } catch(e) {
+                console.error(e);
+                alert('削除に失敗しました');
+            }
+          }
+          
           loadSections();
         </script>
     </body>
@@ -2555,7 +2607,7 @@ app.get('/teacher/phases', (c) => {
                         <a href="/teacher/sections" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
                             <i class="fas fa-arrow-left mr-2"></i>セクション管理へ
                         </a>
-                        <a href="/" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
+                        <a href="/teacher" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
                             <i class="fas fa-home mr-2"></i>トップ
                         </a>
                     </div>
@@ -2575,34 +2627,40 @@ app.get('/teacher/phases', (c) => {
                 </select>
             </div>
 
-            <!-- 新規作成フォーム -->
+            <!-- 新規作成/編集フォーム -->
             <div id="create-phase-section" class="hidden">
                 <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
-                    <h2 class="text-xl font-bold text-gray-800 mb-4">
+                    <h2 class="text-xl font-bold text-gray-800 mb-4" id="form-title">
                         <i class="fas fa-plus-circle mr-2 text-green-500"></i>
                         新しいフェーズを作成
                     </h2>
-                    <form id="create-phase-form" class="space-y-4">
+                    <form id="phase-form" class="space-y-4">
+                        <input type="hidden" name="id" id="edit-id">
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">フェーズ名 *</label>
-                            <input type="text" name="name" required 
+                            <input type="text" name="name" id="input-name" required 
                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                                    placeholder="例：正の数・負の数">
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">説明</label>
-                            <textarea name="description" rows="3" 
+                            <textarea name="description" id="input-description" rows="3" 
                                       class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                                       placeholder="このフェーズで学ぶ内容"></textarea>
                         </div>
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">表示順序</label>
-                            <input type="number" name="order_index" value="0" min="0"
+                            <input type="number" name="order_index" id="input-order_index" value="0" min="0"
                                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
                         </div>
-                        <button type="submit" class="w-full px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
-                            <i class="fas fa-plus mr-2"></i>フェーズを作成
-                        </button>
+                        <div class="flex gap-4">
+                            <button type="submit" id="submit-btn" class="flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition">
+                                <i class="fas fa-plus mr-2"></i>作成
+                            </button>
+                            <button type="button" id="cancel-btn" onclick="resetForm()" class="hidden px-6 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
+                                キャンセル
+                            </button>
+                        </div>
                     </form>
                 </div>
             </div>
@@ -2621,8 +2679,16 @@ app.get('/teacher/phases', (c) => {
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script>
+          // Auth Token Setup
+          const token = localStorage.getItem('token');
+          if (token) {
+              axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+          } else {
+              window.location.href = '/login';
+          }
           const urlParams = new URLSearchParams(window.location.search);
           const initialSectionId = urlParams.get('section_id') || '';
+          let phasesData = [];
           
           // セクション一覧を読み込み
           async function loadSections() {
@@ -2660,30 +2726,35 @@ app.get('/teacher/phases', (c) => {
           async function loadPhases(sectionId) {
             try {
               const response = await axios.get('/api/teacher/phases?section_id=' + sectionId);
-              const phases = response.data.phases;
+              phasesData = response.data.phases;
               
               const listEl = document.getElementById('phases-list');
               
-              if (phases.length === 0) {
+              if (phasesData.length === 0) {
                 listEl.innerHTML = '<p class="text-gray-500 text-center py-8">このセクションにはまだフェーズが登録されていません</p>';
                 return;
               }
               
-              listEl.innerHTML = phases.map(phase => \`
-                <div class="border-2 border-gray-200 rounded-lg p-6 hover:border-purple-400 transition">
+              listEl.innerHTML = phasesData.map(phase => \`
+                <div class="border-2 border-gray-200 rounded-lg p-6 hover:border-purple-400 transition bg-white shadow-sm">
                   <div class="flex justify-between items-start">
                     <div class="flex-1">
                       <h3 class="text-xl font-bold text-gray-800 mb-2">\${phase.name}</h3>
                       <p class="text-gray-600 mb-3">\${phase.description || '説明なし'}</p>
                       <p class="text-sm text-gray-400">表示順序: \${phase.order_index} | ID: \${phase.id}</p>
                     </div>
-                    <div class="flex gap-2 ml-4">
-                      <a href="/teacher/modules?phase_id=\${phase.id}" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm">
+                    <div class="flex gap-2 ml-4 flex-col">
+                      <a href="/teacher/modules?phase_id=\${phase.id}" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm text-center">
                         <i class="fas fa-book mr-1"></i>モジュール管理
                       </a>
-                      <button onclick="deletePhase(\${phase.id})" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm">
-                        <i class="fas fa-trash mr-1"></i>削除
-                      </button>
+                      <div class="flex gap-2">
+                        <button onclick="editPhase(\${phase.id})" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm">
+                            <i class="fas fa-pen mr-1"></i>編集
+                        </button>
+                        <button onclick="deletePhase(\${phase.id})" class="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm">
+                            <i class="fas fa-trash mr-1"></i>削除
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2694,11 +2765,13 @@ app.get('/teacher/phases', (c) => {
             }
           }
           
-          // フェーズ作成
-          document.getElementById('create-phase-form').addEventListener('submit', async (e) => {
+          // フェーズ作成・更新
+          document.getElementById('phase-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             
             const sectionId = document.getElementById('section-select').value;
+            const id = document.getElementById('edit-id').value;
+            
             if (!sectionId) {
               alert('まずセクションを選択してください');
               return;
@@ -2713,22 +2786,67 @@ app.get('/teacher/phases', (c) => {
             };
             
             try {
-              await axios.post('/api/teacher/phases', data);
-              alert('フェーズを作成しました！');
-              e.target.reset();
+              if (id) {
+                  // 更新
+                  await axios.put('/api/teacher/phases/' + id, data);
+                  alert('フェーズを更新しました！');
+              } else {
+                  // 作成
+                  await axios.post('/api/teacher/phases', data);
+                  alert('フェーズを作成しました！');
+              }
+              resetForm();
               loadPhases(sectionId);
             } catch (error) {
-              console.error('フェーズ作成エラー:', error);
+              console.error('エラー:', error);
               alert('エラーが発生しました');
             }
           });
           
+          // 編集モードへ切り替え
+          function editPhase(id) {
+              const phase = phasesData.find(p => p.id === id);
+              if (!phase) return;
+              
+              document.getElementById('edit-id').value = phase.id;
+              document.getElementById('input-name').value = phase.name;
+              document.getElementById('input-description').value = phase.description || '';
+              document.getElementById('input-order_index').value = phase.order_index;
+              
+              document.getElementById('form-title').innerHTML = '<i class="fas fa-pen mr-2 text-blue-500"></i>フェーズを編集';
+              document.getElementById('submit-btn').innerHTML = '<i class="fas fa-save mr-2"></i>更新';
+              document.getElementById('submit-btn').className = 'flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition';
+              document.getElementById('cancel-btn').classList.remove('hidden');
+              
+              document.getElementById('create-phase-section').scrollIntoView({ behavior: 'smooth' });
+          }
+          
+          // フォームリセット
+          function resetForm() {
+              document.getElementById('phase-form').reset();
+              document.getElementById('edit-id').value = '';
+              document.getElementById('input-order_index').value = '0';
+              
+              document.getElementById('form-title').innerHTML = '<i class="fas fa-plus-circle mr-2 text-green-500"></i>新しいフェーズを作成';
+              document.getElementById('submit-btn').innerHTML = '<i class="fas fa-plus mr-2"></i>作成';
+              document.getElementById('submit-btn').className = 'flex-1 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition';
+              document.getElementById('cancel-btn').classList.add('hidden');
+          }
+          
           // フェーズ削除
-          function deletePhase(id) {
-            if (!confirm('本当にこのフェーズを削除しますか？')) {
+          async function deletePhase(id) {
+            if (!confirm('本当にこのフェーズを削除しますか？関連するモジュール・ステップも全て削除されます。')) {
               return;
             }
-            alert('削除機能は今後実装予定です（ID: ' + id + '）');
+            try {
+                await axios.delete('/api/teacher/phases/' + id);
+                alert('削除しました');
+                const sectionId = document.getElementById('section-select').value;
+                if(sectionId) loadPhases(sectionId);
+            } catch(e) {
+                console.error(e);
+                alert('削除に失敗しました');
+            }
           }
           
           // ページ読み込み時にセクション一覧を取得
@@ -2764,7 +2882,7 @@ app.get('/teacher/modules', (c) => {
                         <a href="/teacher/phases" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
                             <i class="fas fa-arrow-left mr-2"></i>フェーズ管理へ
                         </a>
-                        <a href="/" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
+                        <a href="/teacher" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
                             <i class="fas fa-home mr-2"></i>ホーム
                         </a>
                     </div>
@@ -2864,6 +2982,14 @@ app.get('/teacher/modules', (c) => {
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script>
+          // Auth Token Setup
+          const token = localStorage.getItem('token');
+          if (token) {
+              axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+          } else {
+              window.location.href = '/login';
+          }
+          
           const urlParams = new URLSearchParams(window.location.search);
           const initialPhaseId = urlParams.get('phase_id') || '';
           
@@ -3059,7 +3185,7 @@ app.get('/teacher/steps', (c) => {
                         <a href="/teacher/modules" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
                             <i class="fas fa-arrow-left mr-2"></i>モジュール管理へ
                         </a>
-                        <a href="/" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
+                        <a href="/teacher" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
                             <i class="fas fa-home mr-2"></i>トップ
                         </a>
                     </div>
@@ -3142,6 +3268,13 @@ app.get('/teacher/steps', (c) => {
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script>
+          // Auth Token Setup
+          const token = localStorage.getItem('token');
+          if (token) {
+              axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+          } else {
+              window.location.href = '/login';
+          }
           const urlParams = new URLSearchParams(window.location.search);
           const initialModuleId = urlParams.get('module_id');
           
@@ -3407,7 +3540,7 @@ app.get('/teacher/content', (c) => {
                         <a href="/teacher/steps" class="px-4 py-2 bg-blue-500 rounded-lg hover:bg-blue-400 transition">
                             <i class="fas fa-arrow-left mr-2"></i>ステップ管理へ
                         </a>
-                        <a href="/" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
+                        <a href="/teacher" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
                             <i class="fas fa-home mr-2"></i>トップ
                         </a>
                     </div>
@@ -3581,6 +3714,13 @@ app.get('/teacher/content', (c) => {
 
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script>
+          // Auth Token Setup
+          const token = localStorage.getItem('token');
+          if (token) {
+              axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+          } else {
+              window.location.href = '/login';
+          }
             let currentStepId = null;
             let allItems = [];
 
@@ -4761,6 +4901,616 @@ app.get('/teacher/content', (c) => {
             function closePreview() {
                 document.getElementById('preview-modal').classList.add('hidden');
             }
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// 生徒管理画面
+app.get('/teacher/students', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>生徒管理 - 学習アプリ開発プラットフォーム</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-gray-50 min-h-screen">
+        <nav class="bg-gradient-to-r from-green-600 to-teal-600 text-white shadow-lg">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold">
+                        <i class="fas fa-users mr-2"></i>
+                        生徒管理
+                    </h1>
+                    <div class="flex gap-4">
+                        <a href="/teacher/sections" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-400 transition">
+                            <i class="fas fa-book mr-2"></i>セクション管理
+                        </a>
+                        <a href="/teacher" class="px-4 py-2 bg-teal-500 rounded-lg hover:bg-teal-400 transition">
+                            <i class="fas fa-home mr-2"></i>トップ
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <!-- 生徒作成フォーム -->
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-ticket-alt mr-2 text-green-500"></i>
+                    生徒コード発行
+                </h2>
+                <div class="flex gap-4 items-end">
+                    <div class="flex-1">
+                        <p class="text-sm text-gray-600 mb-2">
+                            生徒がログインに使用する「生徒コード」を自動発行します。<br>
+                            初期パスワードも自動生成されます。
+                        </p>
+                    </div>
+                    <button id="generate-code-btn" class="px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition shadow-md font-bold">
+                        <i class="fas fa-plus mr-2"></i>コードを1つ発行
+                    </button>
+                </div>
+            </div>
+
+            <!-- 既存の生徒を追加フォーム -->
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-6 border-t-4 border-blue-500">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-user-plus mr-2 text-blue-500"></i>
+                    既存の生徒を追加
+                </h2>
+                <div class="flex gap-4 items-end">
+                    <div class="flex-1">
+                        <p class="text-sm text-gray-600 mb-2">
+                            他の先生が発行した生徒コードを入力して、自分のクラスに追加します。
+                        </p>
+                        <input type="text" id="existing-student-code" class="w-full px-4 py-2 border rounded-lg" placeholder="生徒コードを入力">
+                    </div>
+                    <button id="add-existing-student-btn" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition h-10 font-bold">
+                        <i class="fas fa-link mr-2"></i>追加
+                    </button>
+                </div>
+            </div>
+
+            <!-- 生徒一覧 -->
+            <div class="bg-white rounded-xl shadow-lg p-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-4">
+                    <i class="fas fa-list mr-2 text-blue-500"></i>
+                    登録生徒一覧
+                </h2>
+                <div class="overflow-x-auto">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">生徒コード</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">メモ</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">登録日</th>
+                                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="students-list" class="bg-white divide-y divide-gray-200">
+                            <!-- JSで追加 -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 割り当てモーダル -->
+        <div id="assignment-modal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+            <div class="bg-white w-full max-w-lg rounded-xl shadow-2xl overflow-hidden">
+                <div class="p-4 border-b bg-gray-50 flex justify-between items-center">
+                    <h3 class="text-lg font-bold text-gray-800">教材割り当て設定</h3>
+                    <button onclick="closeModal()" class="text-gray-500 hover:text-gray-800"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="p-6">
+                    <p class="text-sm text-gray-600 mb-4" id="assignment-student-name"></p>
+                    <div id="sections-checkbox-list" class="space-y-2 max-h-60 overflow-y-auto">
+                        <!-- JSで追加 -->
+                    </div>
+                </div>
+                <div class="p-4 bg-gray-50 text-right">
+                    <button onclick="closeModal()" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">閉じる</button>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script>
+          // Auth Token Setup
+          const token = localStorage.getItem('token');
+          if (token) {
+              axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+          } else {
+              window.location.href = '/login';
+          }
+
+            let students = [];
+            let sections = [];
+            let assignments = [];
+            let currentStudentId = null;
+
+            document.addEventListener('DOMContentLoaded', () => {
+                loadData();
+                
+                document.getElementById('generate-code-btn').addEventListener('click', async () => {
+                    try {
+                        const res = await axios.post('/api/teacher/students', {});
+                        alert('生徒コードを発行しました！\\n\\n生徒コード: ' + res.data.username + '\\n初期パスワード: ' + res.data.password + '\\n\\nこの情報を控えて生徒に伝えてください。');
+                        loadData();
+                    } catch(e) {
+                        alert('発行に失敗しました');
+                    }
+                });
+
+                document.getElementById('add-existing-student-btn').addEventListener('click', async () => {
+                    const codeInput = document.getElementById('existing-student-code');
+                    const code = codeInput.value.trim();
+                    if (!code) {
+                        alert('生徒コードを入力してください');
+                        return;
+                    }
+
+                    try {
+                        await axios.post('/api/teacher/students/link', { username: code });
+                        alert('生徒を追加しました！');
+                        codeInput.value = '';
+                        loadData();
+                    } catch(e) {
+                        const msg = e.response?.data?.error || '追加に失敗しました';
+                        alert(msg);
+                    }
+                });
+            });
+
+            async function loadData() {
+                try {
+                    const [studentsRes, sectionsRes, assignmentsRes] = await Promise.all([
+                        axios.get('/api/teacher/students'),
+                        axios.get('/api/teacher/sections'),
+                        axios.get('/api/teacher/assignments')
+                    ]);
+                    
+                    students = studentsRes.data.students;
+                    sections = sectionsRes.data.sections;
+                    assignments = assignmentsRes.data.assignments;
+                    
+                    renderStudents();
+                } catch(e) {
+                    if (e.response && e.response.status === 401) {
+                        window.location.href = '/login';
+                    }
+                    console.error(e);
+                }
+            }
+
+            function renderStudents() {
+                const tbody = document.getElementById('students-list');
+                if (students.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" class="px-6 py-4 text-center text-gray-500">生徒が登録されていません</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = students.map(s => \`
+                    <tr>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">\${s.id}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">\${s.username}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            <input type="text" value="\${s.memo || ''}" 
+                                   onchange="updateStudentMemo(\${s.id}, this.value)"
+                                   class="border-b border-transparent hover:border-gray-300 focus:border-indigo-500 focus:outline-none bg-transparent w-full"
+                                   placeholder="メモを入力...">
+                        </td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">\${new Date(s.created_at).toLocaleDateString()}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                            <button onclick="openAssignmentModal(\${s.id}, '\${s.username}')" class="text-indigo-600 hover:text-indigo-900 mr-4">
+                                <i class="fas fa-tasks mr-1"></i>割り当て
+                            </button>
+                            <button onclick="deleteStudent(\${s.id})" class="text-red-600 hover:text-red-900">
+                                <i class="fas fa-trash mr-1"></i>削除
+                            </button>
+                        </td>
+                    </tr>
+                \`).join('');
+            }
+
+            window.updateStudentMemo = async (id, memo) => {
+                try {
+                    await axios.put('/api/teacher/students/' + id, { memo });
+                } catch(e) {
+                    console.error(e);
+                    alert('メモの保存に失敗しました');
+                }
+            };
+
+            window.deleteStudent = async (id) => {
+                if(!confirm('本当に削除しますか？この生徒に関連するデータも全て削除されます。')) return;
+                try {
+                    await axios.delete('/api/teacher/students/' + id);
+                    loadData();
+                } catch(e) {
+                    console.error(e);
+                    alert('削除に失敗しました');
+                }
+            };
+
+            function openAssignmentModal(studentId, username) {
+                currentStudentId = studentId;
+                document.getElementById('assignment-student-name').textContent = \`\${username} さんに表示する教材を選択してください\`;
+                document.getElementById('assignment-modal').classList.remove('hidden');
+                
+                const container = document.getElementById('sections-checkbox-list');
+                
+                if (sections.length === 0) {
+                    container.innerHTML = '<p class="text-gray-500">割り当て可能なセクションがありません</p>';
+                    return;
+                }
+
+                container.innerHTML = sections.map(section => {
+                    const assignment = assignments.find(a => a.student_id === studentId && a.section_id === section.id);
+                    const isChecked = !!assignment;
+                    
+                    return \`
+                        <div class="flex items-center p-2 hover:bg-gray-50 rounded border">
+                            <input type="checkbox" id="sec-\${section.id}" \${isChecked ? 'checked' : ''} 
+                                   onchange="toggleAssignment(\${section.id}, this.checked, \${assignment ? assignment.id : null})"
+                                   class="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded">
+                            <label for="sec-\${section.id}" class="ml-3 block text-sm font-medium text-gray-700 w-full cursor-pointer">
+                                \${section.name} <span class="text-gray-400 text-xs ml-2">(\${section.grade_level})</span>
+                            </label>
+                        </div>
+                    \`;
+                }).join('');
+            }
+
+            async function toggleAssignment(sectionId, isChecked, assignmentId) {
+                try {
+                    if (isChecked) {
+                        await axios.post('/api/teacher/assignments', {
+                            student_id: currentStudentId,
+                            section_id: sectionId
+                        });
+                    } else {
+                        if (!assignmentId) {
+                            const res = await axios.get('/api/teacher/assignments');
+                            assignments = res.data.assignments;
+                            const target = assignments.find(a => a.student_id === currentStudentId && a.section_id === sectionId);
+                            if (target) assignmentId = target.id;
+                        }
+                        
+                        if (assignmentId) {
+                            await axios.delete('/api/teacher/assignments/' + assignmentId);
+                        }
+                    }
+                    
+                    const res = await axios.get('/api/teacher/assignments');
+                    assignments = res.data.assignments;
+                    
+                } catch(e) {
+                    alert('設定の保存に失敗しました');
+                }
+            }
+
+            function closeModal() {
+                document.getElementById('assignment-modal').classList.add('hidden');
+            }
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// 生徒用用語集ページ
+app.get('/student/glossary', async (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>用語集 - 学習アプリ</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-gradient-to-br from-yellow-50 to-orange-50 min-h-screen">
+        <nav class="bg-white shadow-md">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold text-yellow-600">
+                        <i class="fas fa-book mr-2"></i>用語集
+                    </h1>
+                    <a href="/student" class="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition">
+                        <i class="fas fa-home mr-2"></i>ホーム
+                    </a>
+                </div>
+            </div>
+        </nav>
+
+        <div class="max-w-5xl mx-auto px-4 py-8">
+            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+                <div class="mb-6">
+                    <input type="text" id="search-input" 
+                           placeholder="用語を検索..." 
+                           class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 focus:outline-none transition">
+                </div>
+
+                <div id="glossary-list" class="space-y-4">
+                    <div class="text-center py-12">
+                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500 mx-auto"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script>
+            // Auth Token Setup
+            const token = localStorage.getItem('token');
+            if (token) {
+                axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+            }
+
+            document.addEventListener('DOMContentLoaded', async () => {
+                const searchInput = document.getElementById('search-input');
+                const listContainer = document.getElementById('glossary-list');
+                
+                async function loadGlossary(search = '') {
+                    try {
+                        const res = await axios.get('/api/glossary?search=' + search);
+                        const items = res.data.glossary;
+                        
+                        if (items.length === 0) {
+                            listContainer.innerHTML = '<div class="text-center py-12 text-gray-500">用語が見つかりません</div>';
+                            return;
+                        }
+                        
+                        listContainer.innerHTML = items.map(item => \`
+                            <div class="border-l-4 border-yellow-400 bg-white rounded-r-lg shadow-sm p-6 hover:shadow-md transition">
+                                <div class="flex justify-between items-start mb-2">
+                                    <div>
+                                        <h3 class="text-xl font-bold text-gray-800">\${item.term}</h3>
+                                        \${item.reading ? \`<p class="text-xs text-gray-500">\${item.reading}</p>\` : ''}
+                                    </div>
+                                    \${item.category ? \`<span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">\${item.category}</span>\` : ''}
+                                </div>
+                                <p class="text-gray-700 mb-3 whitespace-pre-wrap">\${item.definition}</p>
+                                \${item.example ? \`
+                                    <div class="bg-yellow-50 p-3 rounded text-sm text-gray-700 border border-yellow-100">
+                                        <span class="font-bold text-yellow-700 mr-2">例:</span> \${item.example}
+                                    </div>
+                                \` : ''}
+                            </div>
+                        \`).join('');
+                    } catch(e) {
+                        listContainer.innerHTML = '<div class="text-center py-12 text-red-500">読み込みに失敗しました</div>';
+                    }
+                }
+                
+                searchInput.addEventListener('input', (e) => {
+                    loadGlossary(e.target.value);
+                });
+                
+                loadGlossary();
+            });
+        </script>
+    </body>
+    </html>
+  `)
+})
+
+// 教師用用語集管理ページ
+app.get('/teacher/glossary', (c) => {
+  return c.html(`
+    <!DOCTYPE html>
+    <html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>用語集管理 - 学習アプリ開発プラットフォーム</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+    </head>
+    <body class="bg-gray-50 min-h-screen">
+        <nav class="bg-gradient-to-r from-orange-600 to-red-600 text-white shadow-lg">
+            <div class="max-w-7xl mx-auto px-4 py-4">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold">
+                        <i class="fas fa-book mr-2"></i>
+                        用語集管理
+                    </h1>
+                    <div class="flex gap-4">
+                        <a href="/teacher" class="px-4 py-2 bg-orange-500 rounded-lg hover:bg-orange-400 transition">
+                            <i class="fas fa-home mr-2"></i>トップ
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <div class="max-w-7xl mx-auto px-4 py-8">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <!-- 左カラム: フォーム -->
+                <div class="lg:col-span-1">
+                    <div class="bg-white rounded-xl shadow-lg p-6 sticky top-8">
+                        <h2 class="text-xl font-bold text-gray-800 mb-4" id="form-title">
+                            <i class="fas fa-plus-circle mr-2 text-orange-500"></i>
+                            用語の登録
+                        </h2>
+                        <form id="glossary-form" class="space-y-4">
+                            <input type="hidden" name="id" id="edit-id">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">用語 *</label>
+                                <input type="text" name="term" id="input-term" required class="w-full px-3 py-2 border rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">読み仮名</label>
+                                <input type="text" name="reading" id="input-reading" class="w-full px-3 py-2 border rounded-lg">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">カテゴリ</label>
+                                <input type="text" name="category" id="input-category" class="w-full px-3 py-2 border rounded-lg" placeholder="例: 図形">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">定義 *</label>
+                                <textarea name="definition" id="input-definition" required rows="4" class="w-full px-3 py-2 border rounded-lg"></textarea>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-700 mb-1">用例</label>
+                                <textarea name="example" id="input-example" rows="2" class="w-full px-3 py-2 border rounded-lg"></textarea>
+                            </div>
+                            <div class="flex gap-2 pt-2">
+                                <button type="submit" id="submit-btn" class="flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition font-bold">
+                                    登録
+                                </button>
+                                <button type="button" id="cancel-btn" onclick="resetForm()" class="hidden px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
+                                    キャンセル
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- 右カラム: 一覧 -->
+                <div class="lg:col-span-2">
+                    <div class="bg-white rounded-xl shadow-lg p-6">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-xl font-bold text-gray-800">
+                                <i class="fas fa-list mr-2 text-orange-500"></i>
+                                登録済み用語
+                            </h2>
+                            <input type="text" id="search-input" placeholder="検索..." class="px-3 py-1 border rounded-lg text-sm">
+                        </div>
+                        <div id="glossary-list" class="space-y-4">
+                            <!-- JSで描画 -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
+        <script>
+            const token = localStorage.getItem('token');
+            if (token) {
+                axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+            } else {
+                window.location.href = '/login';
+            }
+
+            let allTerms = [];
+
+            document.addEventListener('DOMContentLoaded', () => {
+                loadGlossary();
+                
+                document.getElementById('glossary-form').addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    const formData = new FormData(e.target);
+                    const id = document.getElementById('edit-id').value;
+                    const data = Object.fromEntries(formData.entries());
+                    
+                    try {
+                        if (id) {
+                            await axios.put('/api/teacher/glossary/' + id, data);
+                            alert('更新しました');
+                        } else {
+                            await axios.post('/api/teacher/glossary', data);
+                            alert('登録しました');
+                        }
+                        resetForm();
+                        loadGlossary();
+                    } catch(e) {
+                        alert('エラーが発生しました');
+                    }
+                });
+                
+                document.getElementById('search-input').addEventListener('input', (e) => {
+                    renderList(e.target.value);
+                });
+            });
+
+            async function loadGlossary() {
+                try {
+                    const res = await axios.get('/api/glossary');
+                    allTerms = res.data.glossary;
+                    renderList();
+                } catch(e) {
+                    console.error(e);
+                }
+            }
+
+            function renderList(search = '') {
+                const container = document.getElementById('glossary-list');
+                const filtered = allTerms.filter(t => 
+                    (t.term + t.definition + (t.reading||'')).toLowerCase().includes(search.toLowerCase())
+                );
+                
+                if (filtered.length === 0) {
+                    container.innerHTML = '<p class="text-gray-500 text-center py-8">用語が見つかりません</p>';
+                    return;
+                }
+                
+                container.innerHTML = filtered.map(t => \`
+                    <div class="border border-gray-200 rounded-lg p-4 hover:bg-orange-50 transition relative group">
+                        <div class="absolute right-4 top-4 opacity-0 group-hover:opacity-100 transition flex gap-2">
+                            <button onclick="editTerm(\${t.id})" class="text-blue-500 hover:bg-blue-50 p-1 rounded"><i class="fas fa-pen"></i></button>
+                            <button onclick="deleteTerm(\${t.id})" class="text-red-500 hover:bg-red-50 p-1 rounded"><i class="fas fa-trash"></i></button>
+                        </div>
+                        <div class="flex items-baseline gap-2 mb-1">
+                            <h3 class="font-bold text-lg text-gray-800">\${t.term}</h3>
+                            <span class="text-xs text-gray-500">\${t.reading || ''}</span>
+                            \${t.category ? \`<span class="ml-2 px-2 py-0.5 bg-gray-100 text-gray-600 text-xs rounded">\${t.category}</span>\` : ''}
+                        </div>
+                        <p class="text-gray-700 text-sm mb-2">\${t.definition}</p>
+                        \${t.example ? \`<p class="text-xs text-gray-500 bg-gray-50 p-2 rounded"><span class="font-bold">例:</span> \${t.example}</p>\` : ''}
+                    </div>
+                \`).join('');
+            }
+
+            window.editTerm = function(id) {
+                const term = allTerms.find(t => t.id === id);
+                if (!term) return;
+                
+                document.getElementById('edit-id').value = term.id;
+                document.getElementById('input-term').value = term.term;
+                document.getElementById('input-reading').value = term.reading || '';
+                document.getElementById('input-category').value = term.category || '';
+                document.getElementById('input-definition').value = term.definition;
+                document.getElementById('input-example').value = term.example || '';
+                
+                document.getElementById('form-title').innerHTML = '<i class="fas fa-pen mr-2 text-blue-500"></i>用語を編集';
+                document.getElementById('submit-btn').textContent = '更新';
+                document.getElementById('submit-btn').className = 'flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition font-bold';
+                document.getElementById('cancel-btn').classList.remove('hidden');
+                
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            };
+
+            window.deleteTerm = async function(id) {
+                if (!confirm('削除しますか？')) return;
+                try {
+                    await axios.delete('/api/teacher/glossary/' + id);
+                    loadGlossary();
+                } catch(e) {
+                    alert('削除に失敗しました');
+                }
+            };
+
+            window.resetForm = function() {
+                document.getElementById('glossary-form').reset();
+                document.getElementById('edit-id').value = '';
+                
+                document.getElementById('form-title').innerHTML = '<i class="fas fa-plus-circle mr-2 text-orange-500"></i>用語の登録';
+                document.getElementById('submit-btn').textContent = '登録';
+                document.getElementById('submit-btn').className = 'flex-1 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition font-bold';
+                document.getElementById('cancel-btn').classList.add('hidden');
+            };
         </script>
     </body>
     </html>

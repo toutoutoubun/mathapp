@@ -1,3 +1,9 @@
+// Auth Token Setup
+const token = localStorage.getItem('token');
+if (token && typeof axios !== 'undefined') {
+  axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+}
+
 // グローバル変数
 let currentProgress = [];
 let achievements = [];

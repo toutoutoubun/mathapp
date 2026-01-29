@@ -20,3 +20,30 @@ INSERT OR IGNORE INTO africa_cards (user_id, card_id, city_name, country, popula
   ('system', 'kigali', 'キガリ', 'ルワンダ', '約130万人', 'ルワンダの首都。「アフリカで最もきれいな都市」と呼ばれています。', '/static/cards/kigali.jpg'),
   ('system', 'addis_ababa', 'アディスアベバ', 'エチオピア', '約350万人', 'エチオピアの首都。アフリカ連合の本部があります。', '/static/cards/addis_ababa.jpg'),
   ('system', 'cape_town', 'ケープタウン', '南アフリカ', '約430万人', '美しい海岸と山に囲まれた観光都市です。', '/static/cards/cape_town.jpg');
+
+-- テストユーザー
+INSERT OR IGNORE INTO users (id, username, password, role) VALUES 
+  (1, 'teacher1', 'password', 'teacher'),
+  (2, 'student1', 'password', 'student');
+
+-- テストセクション
+INSERT OR IGNORE INTO sections (id, name, description, grade_level, subject, teacher_id, access_code) VALUES 
+  (1, '中学1年 数学', '数学の基礎を学びます', '中学1年', '数学', 1, 'MATH01'),
+  (2, '高校2年 物理', '力学と波動について', '高校2年', '理科', 1, 'PHYS02');
+
+-- テストフェーズ
+INSERT OR IGNORE INTO phases (id, section_id, name, description, order_index) VALUES
+  (1, 1, '正の数・負の数', 'プラスとマイナスの数について学びます', 1),
+  (2, 1, '文字と式', '文字を使った式の計算', 2),
+  (3, 2, '力学', '物体の運動と力', 1);
+
+-- テストモジュール
+INSERT OR IGNORE INTO modules (id, phase_id, name, description, icon, color, order_index) VALUES
+  (1, 1, '正負の数の意味', '0より小さい数について', '1️⃣', 'blue', 1),
+  (2, 1, '加法と減法', '足し算と引き算', '➕', 'green', 2),
+  (3, 3, '速度と加速度', '速さの変化について', '🚗', 'red', 1);
+
+-- アサインメント（生徒1をセクション1と2に割り当て）
+INSERT OR IGNORE INTO assignments (teacher_id, student_id, section_id) VALUES 
+  (1, 2, 1),
+  (1, 2, 2);
