@@ -824,6 +824,27 @@ app.get('/api/student/phase-progress', async (c) => {
 
 // ==================== Q&A API Routes ====================
 
+// 生徒の質問履歴取得
+app.get('/api/student/my-questions', async (c) => {
+  const { DB } = c.env
+  const user = c.get('user')
+  
+  if (!user || user.role !== 'student') {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+
+  const result = await DB.prepare(`
+    SELECT q.*, m.name as module_name, s.title as step_title
+    FROM student_questions q
+    LEFT JOIN modules m ON q.module_id = m.id
+    LEFT JOIN steps s ON q.step_id = s.id
+    WHERE q.student_id = ?
+    ORDER BY q.created_at DESC
+  `).bind(user.id).all()
+
+  return c.json({ questions: result.results })
+})
+
 // 生徒からの質問投稿
 app.post('/api/student/questions', async (c) => {
   const { DB } = c.env
@@ -1954,6 +1975,7 @@ app.get('/student/modules/:id', async (c) => {
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <script src="https://unpkg.com/function-plot/dist/function-plot.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
         <script>
           window.MathJax = {
             tex: { inlineMath: [['$', '$'], ['\\\\(', '\\\\)']] }
@@ -1975,6 +1997,9 @@ app.get('/student/modules/:id', async (c) => {
                     <div class="flex items-center gap-3">
                         <button id="question-btn" class="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition shadow-sm">
                             <i class="fas fa-question-circle mr-2"></i>先生に質問する
+                        </button>
+                        <button id="history-btn" onclick="showQuestionHistory()" class="px-4 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 transition shadow-sm">
+                            <i class="fas fa-history mr-2"></i>質問履歴
                         </button>
                         <a href="${homeLink}" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
                             <i class="fas fa-home mr-2"></i>${homeText}
@@ -2040,16 +2065,27 @@ app.get('/student/modules/:id', async (c) => {
 
             function initializeQuestionButton() {
                 const btn = document.getElementById('question-btn');
+                const historyBtn = document.getElementById('history-btn');
                 if (!btn) return;
 
                 btn.removeAttribute('disabled');
                 btn.classList.remove('opacity-60', 'cursor-not-allowed');
                 btn.title = '';
+                
+                if (historyBtn) {
+                    historyBtn.removeAttribute('disabled');
+                    historyBtn.classList.remove('opacity-60', 'cursor-not-allowed');
+                }
 
                 if (IS_PREVIEW) {
                     btn.disabled = true;
                     btn.classList.add('opacity-60', 'cursor-not-allowed');
                     btn.title = 'プレビュー中は質問を送信できません';
+                    
+                    if (historyBtn) {
+                        historyBtn.disabled = true;
+                        historyBtn.classList.add('opacity-60', 'cursor-not-allowed');
+                    }
                     return;
                 }
 
@@ -2057,12 +2093,84 @@ app.get('/student/modules/:id', async (c) => {
                     btn.disabled = true;
                     btn.classList.add('opacity-60', 'cursor-not-allowed');
                     btn.title = '生徒アカウントでログインすると質問できます';
+                    
+                    if (historyBtn) {
+                        historyBtn.disabled = true;
+                        historyBtn.classList.add('opacity-60', 'cursor-not-allowed');
+                    }
                     return;
                 }
 
                 if (btn.dataset.bound === 'true') return;
                 btn.addEventListener('click', handleQuestionClick);
                 btn.dataset.bound = 'true';
+            }
+
+            async function showQuestionHistory() {
+                try {
+                    Swal.fire({
+                        title: '読み込み中...',
+                        allowOutsideClick: false,
+                        didOpen: () => Swal.showLoading()
+                    });
+                    
+                    const res = await axios.get('/api/student/my-questions');
+                    const questions = res.data.questions;
+                    
+                    Swal.close();
+                    
+                    if (questions.length === 0) {
+                        Swal.fire({
+                            icon: 'info',
+                            title: '質問履歴',
+                            text: 'まだ質問はありません'
+                        });
+                        return;
+                    }
+                    
+                    const html = questions.map(q => {
+                        const isReplied = q.status === 'replied';
+                        const dateStr = dayjs(q.created_at).format('MM/DD HH:mm');
+                        const statusBadge = isReplied 
+                            ? '<span class="px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs font-bold">返信あり</span>'
+                            : '<span class="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs">未返信</span>';
+                            
+                        return \`
+                            <div class="text-left mb-4 p-4 border rounded-lg bg-gray-50">
+                                <div class="flex justify-between items-center mb-2">
+                                    \${statusBadge}
+                                    <span class="text-xs text-gray-500">\${dateStr}</span>
+                                </div>
+                                <div class="mb-2">
+                                    <p class="text-sm font-bold text-gray-700">Q. \${sanitizeHtml(q.question_text)}</p>
+                                </div>
+                                \${isReplied ? \`
+                                    <div class="mt-3 pt-3 border-t border-gray-200">
+                                        <p class="text-sm font-bold text-green-700 mb-1">A. 先生からの返信</p>
+                                        <p class="text-sm text-gray-800 whitespace-pre-wrap">\${sanitizeHtml(q.reply_text)}</p>
+                                        <p class="text-xs text-gray-400 mt-1 text-right">\${dayjs(q.reply_at).format('MM/DD HH:mm')}</p>
+                                    </div>
+                                \` : ''}
+                            </div>
+                        \`;
+                    }).join('');
+                    
+                    Swal.fire({
+                        title: '質問履歴',
+                        html: \`<div class="max-h-[60vh] overflow-y-auto">\${html}</div>\`,
+                        width: '600px',
+                        showConfirmButton: false,
+                        showCloseButton: true
+                    });
+                    
+                } catch(e) {
+                    console.error(e);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'エラー',
+                        text: '履歴の取得に失敗しました'
+                    });
+                }
             }
 
             function sanitizeHtml(str) {
