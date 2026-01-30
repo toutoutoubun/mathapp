@@ -4275,7 +4275,7 @@ app.get('/teacher/content', (c) => {
                 try {
                     const [blocksRes, questionsRes] = await Promise.all([
                         axios.get(\`/api/teacher/content-blocks?step_id=\${stepId}\`),
-                        axios.get(\`/api/teacher/questions?step_id=\${stepId}\`)
+                        axios.get(\`/api/teacher/step-questions?step_id=\${stepId}\`)
                     ]);
 
                     const blocks = blocksRes.data.blocks.map(b => ({ ...b, type: 'block' }));
