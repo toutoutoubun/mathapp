@@ -5715,7 +5715,7 @@ app.get('/teacher/students', (c) => {
                 document.getElementById('generate-code-btn').addEventListener('click', async () => {
                     try {
                         const res = await axios.post('/api/teacher/students', {});
-                        Swal.fire({ icon: 'info', text: '生徒コードを発行しました！\\n\\n生徒コード: ' + res.data.username + '\\n初期パスワード: ' + res.data.password + '\\n\\nこの情報を控えて生徒に伝えてください。' });
+                        await Swal.fire({ icon: 'info', text: '生徒コードを発行しました！\\n\\n生徒コード: ' + res.data.username + '\\n初期パスワード: ' + res.data.password + '\\n\\nこの情報を控えて生徒に伝えてください。' });
                         loadData();
                     } catch(e) {
                         Swal.fire({ icon: 'error', title: 'エラー', text: '発行に失敗しました' });
@@ -5732,7 +5732,7 @@ app.get('/teacher/students', (c) => {
 
                     try {
                         await axios.post('/api/teacher/students/link', { username: code });
-                        Swal.fire({ icon: 'success', title: '追加完了', text: '生徒を追加しました！' });
+                        await Swal.fire({ icon: 'success', title: '追加完了', text: '生徒を追加しました！' });
                         codeInput.value = '';
                         loadData();
                     } catch(e) {
@@ -5817,6 +5817,7 @@ app.get('/teacher/students', (c) => {
     if (!isConfirmed) return;
                 try {
                     await axios.delete('/api/teacher/students/' + id);
+                    await Swal.fire({ icon: 'success', title: '削除完了', text: '生徒を削除しました' });
                     loadData();
                 } catch(e) {
                     console.error(e);
