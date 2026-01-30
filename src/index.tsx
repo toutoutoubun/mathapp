@@ -6,6 +6,7 @@ import { jwt, sign, verify } from 'hono/jwt'
 type Bindings = {
   DB: D1Database;
   JWT_SECRET: string;
+  IMAGES?: R2Bucket;
 }
 
 const app = new Hono<{ Bindings: Bindings }>()
@@ -377,6 +378,54 @@ app.delete('/api/teacher/sections/:id', async (c) => {
 
 // ==================== Student API Routes ====================
 
+// 生徒用ダッシュボードデータ一括取得
+app.get('/api/student/dashboard', async (c) => {
+  const { DB } = c.env
+  const user = c.get('user')
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+      // 1. セクション取得
+      const sectionsRes = await DB.prepare(`
+        SELECT s.* 
+        FROM sections s
+        JOIN assignments a ON s.id = a.section_id
+        WHERE a.student_id = ?
+        ORDER BY s.grade_level, s.subject
+      `).bind(user.id).all()
+      
+      // 2. フェーズ取得
+      const phasesRes = await DB.prepare(`
+        SELECT p.* 
+        FROM phases p
+        JOIN sections s ON p.section_id = s.id
+        JOIN assignments a ON s.id = a.section_id
+        WHERE a.student_id = ?
+        ORDER BY p.order_index
+      `).bind(user.id).all()
+      
+      // 3. モジュール取得
+      const modulesRes = await DB.prepare(`
+        SELECT m.*, p.section_id
+        FROM modules m
+        JOIN phases p ON m.phase_id = p.id
+        JOIN sections s ON p.section_id = s.id
+        JOIN assignments a ON s.id = a.section_id
+        WHERE a.student_id = ?
+        ORDER BY m.order_index
+      `).bind(user.id).all()
+
+      return c.json({ 
+          sections: sectionsRes.results, 
+          phases: phasesRes.results, 
+          modules: modulesRes.results 
+      })
+  } catch(e) {
+      console.error('Dashboard Error:', e)
+      return c.json({ error: 'Failed to load dashboard data' }, 500)
+  }
+})
+
 // セクション一覧取得（生徒用：割り当てられたもののみ）
 app.get('/api/student/sections', async (c) => {
   const { DB } = c.env
@@ -423,11 +472,22 @@ app.get('/api/student/modules', async (c) => {
   let query = 'SELECT * FROM modules'
   if (phase_id) {
     query += ' WHERE phase_id = ?'
-    const result = await DB.prepare(query + ' ORDER BY order_index').bind(phase_id).all()
+    const result = await DB.prepare(`
+        SELECT m.*, p.section_id 
+        FROM modules m 
+        JOIN phases p ON m.phase_id = p.id
+        WHERE m.phase_id = ?
+        ORDER BY m.order_index
+    `).bind(phase_id).all()
     return c.json({ modules: result.results })
   }
   
-  const result = await DB.prepare(query + ' ORDER BY order_index').all()
+  const result = await DB.prepare(`
+    SELECT m.*, p.section_id 
+    FROM modules m 
+    JOIN phases p ON m.phase_id = p.id
+    ORDER BY m.order_index
+  `).all()
   return c.json({ modules: result.results })
 })
 
@@ -462,6 +522,54 @@ app.post('/api/student/join', async (c) => {
 })
 
 // ==================== Student API Routes ====================
+
+// 生徒用ダッシュボードデータ一括取得
+app.get('/api/student/dashboard', async (c) => {
+  const { DB } = c.env
+  const user = c.get('user')
+  if (!user) return c.json({ error: 'Unauthorized' }, 401)
+
+  try {
+      // 1. セクション取得
+      const sectionsRes = await DB.prepare(`
+        SELECT s.* 
+        FROM sections s
+        JOIN assignments a ON s.id = a.section_id
+        WHERE a.student_id = ?
+        ORDER BY s.grade_level, s.subject
+      `).bind(user.id).all()
+      
+      // 2. フェーズ取得
+      const phasesRes = await DB.prepare(`
+        SELECT p.* 
+        FROM phases p
+        JOIN sections s ON p.section_id = s.id
+        JOIN assignments a ON s.id = a.section_id
+        WHERE a.student_id = ?
+        ORDER BY p.order_index
+      `).bind(user.id).all()
+      
+      // 3. モジュール取得
+      const modulesRes = await DB.prepare(`
+        SELECT m.*, p.section_id
+        FROM modules m
+        JOIN phases p ON m.phase_id = p.id
+        JOIN sections s ON p.section_id = s.id
+        JOIN assignments a ON s.id = a.section_id
+        WHERE a.student_id = ?
+        ORDER BY m.order_index
+      `).bind(user.id).all()
+
+      return c.json({ 
+          sections: sectionsRes.results, 
+          phases: phasesRes.results, 
+          modules: modulesRes.results 
+      })
+  } catch(e) {
+      console.error('Dashboard Error:', e)
+      return c.json({ error: 'Failed to load dashboard data' }, 500)
+  }
+})
 
 // ステップ一覧取得（生徒用）
 app.get('/api/student/steps', async (c) => {
@@ -542,6 +650,22 @@ app.get('/api/student/questions', async (c) => {
   return c.json({ questions })
 })
 
+// 進捗APIのミドルウェア（認証必須）
+app.use('/api/progress', async (c, next) => {
+    const authHeader = c.req.header('Authorization');
+    if (!authHeader) return c.json({ error: 'Unauthorized' }, 401);
+    
+    try {
+        const token = authHeader.replace('Bearer ', '');
+        const payload = await verify(token, JWT_SECRET, 'HS256');
+        c.set('user', payload);
+        await next();
+    } catch(e) {
+        console.error('Auth Error:', e);
+        return c.json({ error: 'Unauthorized' }, 401);
+    }
+});
+
 // 進捗状況取得
 app.get('/api/progress', async (c) => {
   const { DB } = c.env
@@ -568,6 +692,8 @@ app.post('/api/progress', async (c) => {
   }
 
   const { module_id, step_id, status } = await c.req.json()
+  
+  console.log('[Progress Update]', { user_id: user.id, module_id, step_id, status })
   
   await DB.prepare(`
     INSERT INTO user_progress (user_id, module_id, step_id, status, updated_at)
@@ -720,6 +846,123 @@ app.delete('/api/teacher/glossary/:id', async (c) => {
   return c.json({ success: true })
 })
 
+// ==================== Image Upload API Routes ====================
+
+// 画像アップロード
+app.post('/api/teacher/upload-image', async (c) => {
+  try {
+    const { IMAGES } = c.env
+    
+    // R2が利用できない場合のフォールバック
+    if (!IMAGES) {
+      // Base64エンコードされた画像をレスポンスとして返す（開発環境用）
+      const formData = await c.req.formData()
+      const file = formData.get('image')
+      
+      if (!file || !(file instanceof File)) {
+        return c.json({ error: 'ファイルがありません' }, 400)
+      }
+      
+      // ファイルサイズチェック（5MB制限）
+      if (file.size > 5 * 1024 * 1024) {
+        return c.json({ error: 'ファイルサイズが大きすぎます（最大5MB）' }, 400)
+      }
+      
+      // ファイルタイプチェック
+      if (!file.type.startsWith('image/')) {
+        return c.json({ error: '画像ファイルのみアップロード可能です' }, 400)
+      }
+      
+      // ArrayBufferに変換してBase64エンコード
+      const arrayBuffer = await file.arrayBuffer()
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
+      const dataUrl = `data:${file.type};base64,${base64}`
+      
+      return c.json({ 
+        success: true, 
+        url: dataUrl,
+        filename: file.name,
+        note: 'R2バケットが設定されていないため、Base64エンコードされた画像を返しています'
+      })
+    }
+    
+    // R2が利用可能な場合
+    const formData = await c.req.formData()
+    const file = formData.get('image')
+    
+    if (!file || !(file instanceof File)) {
+      return c.json({ error: 'ファイルがありません' }, 400)
+    }
+    
+    // ファイルサイズチェック（5MB制限）
+    if (file.size > 5 * 1024 * 1024) {
+      return c.json({ error: 'ファイルサイズが大きすぎます（最大5MB）' }, 400)
+    }
+    
+    // ファイルタイプチェック
+    if (!file.type.startsWith('image/')) {
+      return c.json({ error: '画像ファイルのみアップロード可能です' }, 400)
+    }
+    
+    // ユニークなファイル名を生成
+    const timestamp = Date.now()
+    const randomStr = Math.random().toString(36).substring(2, 15)
+    const ext = file.name.split('.').pop() || 'jpg'
+    const key = `images/${timestamp}-${randomStr}.${ext}`
+    
+    // R2にアップロード
+    const arrayBuffer = await file.arrayBuffer()
+    await IMAGES.put(key, arrayBuffer, {
+      httpMetadata: {
+        contentType: file.type
+      }
+    })
+    
+    // 公開URLを生成（実際の環境に合わせて調整が必要）
+    const publicUrl = `/api/images/${key}`
+    
+    return c.json({ 
+      success: true, 
+      url: publicUrl,
+      filename: file.name,
+      key: key
+    })
+  } catch (e: any) {
+    console.error('Upload Error:', e)
+    return c.json({ error: 'アップロードに失敗しました: ' + e.message }, 500)
+  }
+})
+
+// 画像取得
+app.get('/api/images/*', async (c) => {
+  try {
+    const { IMAGES } = c.env
+    
+    if (!IMAGES) {
+      return c.text('R2 bucket not configured', 404)
+    }
+    
+    const key = c.req.path.replace('/api/images/', '')
+    const object = await IMAGES.get(key)
+    
+    if (!object) {
+      return c.text('Image not found', 404)
+    }
+    
+    const headers = new Headers()
+    object.writeHttpMetadata(headers)
+    headers.set('etag', object.httpEtag)
+    headers.set('cache-control', 'public, max-age=31536000')
+    
+    return new Response(object.body, {
+      headers
+    })
+  } catch (e: any) {
+    console.error('Image fetch error:', e)
+    return c.text('Error fetching image', 500)
+  }
+})
+
 // フェーズごとの進捗取得
 app.get('/api/student/phase-progress', async (c) => {
   const { DB } = c.env
@@ -755,7 +998,7 @@ app.get('/api/student/phase-progress', async (c) => {
       m.phase_id, 
       COUNT(up.step_id) as completed_steps
     FROM user_progress up
-    JOIN steps st ON up.step_id = st.id
+    JOIN steps st ON CAST(up.step_id AS INTEGER) = st.id
     JOIN modules m ON st.module_id = m.id
     WHERE up.user_id = ? AND up.status = 'completed'
     GROUP BY m.phase_id
@@ -908,7 +1151,7 @@ app.get('/login', (c) => {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>教師ログイン - 学習アプリ</title>
         <script src="https://cdn.tailwindcss.com"></script>
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
     </head>
     <body class="bg-gray-100 min-h-screen flex items-center justify-center">
         <div class="bg-white p-8 rounded-xl shadow-lg w-full max-w-md border-t-4 border-indigo-600">
@@ -989,7 +1232,7 @@ app.get('/student/login', (c) => {
         <title>生徒ログイン - 学習アプリ</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
     </head>
     <body class="bg-blue-50 min-h-screen flex items-center justify-center">
@@ -1084,7 +1327,7 @@ app.get('/register', (c) => {
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>教師登録 - 学習アプリ</title>
         <script src="https://cdn.tailwindcss.com"></script>
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
     </head>
     <body class="bg-gray-100 min-h-screen flex items-center justify-center">
@@ -1448,7 +1691,7 @@ app.get('/student', (c) => {
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
         <link href="/static/style.css" rel="stylesheet">
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
     </head>
     <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
         <!-- ナビゲーションバー -->
@@ -1599,6 +1842,14 @@ app.get('/student', (c) => {
                     }
                 }
 
+                // ページ表示時（キャッシュ復帰含む）にデータを再読み込み
+                loadDashboardData();
+                window.addEventListener('pageshow', (event) => {
+                    if (event.persisted) {
+                        loadDashboardData();
+                    }
+                });
+
                 // コード参加処理
                 const joinForm = document.getElementById('join-form');
                 if (joinForm) {
@@ -1611,7 +1862,7 @@ app.get('/student', (c) => {
                             const res = await axios.post('/api/student/join', { access_code: code });
                             if (res.data.success) {
                                 await Swal.fire({ icon: 'success', title: '参加しました！', text: \`「\${res.data.section.name}」に参加しました！\` });
-                                window.location.reload();
+                                loadDashboardData(); // リロードではなくデータ再読み込み
                             }
                         } catch(e) {
                             if (e.response && e.response.status === 404) {
@@ -1627,6 +1878,8 @@ app.get('/student', (c) => {
                     });
                 }
 
+            // データ読み込み関数
+            async function loadDashboardData() {
                 const container = document.getElementById('modules-grid');
                 const progressContainer = document.getElementById('progress-container');
                 const sectionSelect = document.getElementById('section-select');
@@ -1635,75 +1888,51 @@ app.get('/student', (c) => {
                 let allPhaseProgress = [];
 
                 try {
-                    // 1. セクション一覧取得 & プルダウン設定
-                    const sectionsRes = await axios.get('/api/student/sections');
-                    const sections = sectionsRes.data.sections;
+                    // 1. ダッシュボードデータ一括取得
+                    const res = await axios.get('/api/student/dashboard');
+                    const { sections, phases, modules } = res.data;
                     
-                    if (sectionSelect) {
+                    if (sectionSelect && sectionSelect.options.length <= 1) { // 既に読み込まれていればスキップ
                         sectionSelect.innerHTML = '<option value="">すべての学年</option>' + 
                             sections.map(s => \`<option value="\${s.id}">\${s.name}</option>\`).join('');
-                        
-                        // フィルタリングイベント
-                        sectionSelect.addEventListener('change', (e) => {
-                            const selectedId = e.target.value;
-                            
-                            // コンテンツカードのフィルタリング
-                            const cards = document.querySelectorAll('.module-card');
-                            let hasVisible = false;
-                            cards.forEach(card => {
-                                if (!selectedId || card.dataset.sectionId === selectedId) {
-                                    card.style.display = 'block';
-                                    hasVisible = true;
-                                } else {
-                                    card.style.display = 'none';
-                                }
-                            });
-                            
-                            // メッセージ表示切替
-                            const emptyMsg = document.getElementById('empty-message');
-                            if (emptyMsg) emptyMsg.style.display = hasVisible ? 'none' : 'block';
-
-                            // 進捗バーのフィルタリング
-                            renderProgress(selectedId);
-                        });
                     }
                     
                     // 2. コンテンツ一覧表示
                     let hasContent = false;
                     const cardsHtml = [];
 
-                    for (const section of sections) {
-                        const phasesRes = await axios.get('/api/student/phases?section_id=' + section.id);
-                        const phases = phasesRes.data.phases;
+                    // マップ作成
+                    const sectionMap = new Map(sections.map(s => [s.id, s.name]));
+                    const phaseMap = new Map(phases.map(p => [p.id, p]));
 
-                        for (const phase of phases) {
-                            const modulesRes = await axios.get('/api/student/modules?phase_id=' + phase.id);
-                            const modules = modulesRes.data.modules;
-
-                            modules.forEach(module => {
-                                hasContent = true;
-                                const colorClass = module.color ? \`from-\${module.color}-100 to-\${module.color}-200\` : 'from-indigo-100 to-purple-200';
-                                
-                                cardsHtml.push(\`
-                                    <a href="/student/modules/\${module.id}" 
-                                       class="module-card block p-6 bg-gradient-to-br \${colorClass} rounded-lg hover:shadow-xl transition transform hover:-translate-y-1"
-                                       data-section-id="\${section.id}">
-                                        <div class="text-4xl mb-4">\${module.icon || '📝'}</div>
-                                        <h4 class="text-xl font-bold text-gray-800 mb-2">\${module.name}</h4>
-                                        <p class="text-gray-600 text-xs font-bold uppercase tracking-wide opacity-70 mb-2">
-                                            \${section.name} &gt; \${phase.name}
-                                        </p>
-                                        <p class="text-gray-600 text-sm line-clamp-2">
-                                            \${module.description || '説明なし'}
-                                        </p>
-                                        <div class="mt-4 text-sm font-semibold opacity-80">
-                                            学習を始める →
-                                        </div>
-                                    </a>
-                                \`);
-                            });
-                        }
-                    }
+                    modules.forEach(module => {
+                        hasContent = true;
+                        const phase = phaseMap.get(module.phase_id);
+                        const sectionName = phase ? sectionMap.get(phase.section_id) : '不明';
+                        const phaseName = phase ? phase.name : '不明';
+                        // module.section_id があればそれを使い、なければ phase.section_id を使う
+                        const sectionId = module.section_id || (phase ? phase.section_id : '');
+                        
+                        const colorClass = module.color ? \`from-\${module.color}-100 to-\${module.color}-200\` : 'from-indigo-100 to-purple-200';
+                        
+                        cardsHtml.push(\`
+                            <a href="/student/modules/\${module.id}" 
+                               class="module-card block p-6 bg-gradient-to-br \${colorClass} rounded-lg hover:shadow-xl transition transform hover:-translate-y-1"
+                               data-section-id="\${sectionId}">
+                                <div class="text-4xl mb-4">\${module.icon || '📝'}</div>
+                                <h4 class="text-xl font-bold text-gray-800 mb-2">\${module.name}</h4>
+                                <p class="text-gray-600 text-xs font-bold uppercase tracking-wide opacity-70 mb-2">
+                                    \${sectionName} &gt; \${phaseName}
+                                </p>
+                                <p class="text-gray-600 text-sm line-clamp-2">
+                                    \${module.description || '説明なし'}
+                                </p>
+                                <div class="mt-4 text-sm font-semibold opacity-80">
+                                    学習を始める →
+                                </div>
+                            </a>
+                        \`);
+                    });
                     
                     if (!hasContent) {
                         container.innerHTML = \`
@@ -1722,47 +1951,78 @@ app.get('/student', (c) => {
                     // 3. 進捗状況の取得と表示
                     const progressRes = await axios.get('/api/student/phase-progress');
                     allPhaseProgress = progressRes.data.progress;
-                    renderProgress();
+                    
+                    // 進捗バー描画関数
+                    const renderProgress = (filterSectionId = '') => {
+                        if (!progressContainer) return;
+                        
+                        // フィルタリング
+                        const displayProgress = filterSectionId 
+                            ? allPhaseProgress.filter(p => p.section_id == filterSectionId)
+                            : allPhaseProgress;
+
+                        if (displayProgress.length === 0) {
+                            progressContainer.innerHTML = '<p class="text-gray-500">表示する進捗データがありません。</p>';
+                            return;
+                        }
+
+                        // 進捗があるフェーズのみ表示、または全フェーズ表示？
+                        // ここでは全フェーズ表示し、進捗0%でも表示する
+                        progressContainer.innerHTML = displayProgress.map(p => \`
+                            <div class="mb-4">
+                                <div class="flex justify-between mb-1">
+                                    <span class="text-sm font-medium text-gray-700">
+                                        <span class="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded mr-2">\${p.section_name}</span>
+                                        \${p.phase_name}
+                                    </span>
+                                    <span class="text-sm font-medium text-blue-700">\${p.percentage}%</span>
+                                </div>
+                                <div class="w-full bg-gray-200 rounded-full h-2.5">
+                                    <div class="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style="width: \${p.percentage}%"></div>
+                                </div>
+                                <div class="text-right text-xs text-gray-400 mt-1">
+                                    \${p.completed_steps} / \${p.total_steps} ステップ完了
+                                </div>
+                            </div>
+                        \`).join('');
+                    };
+                    
+                    renderProgress(sectionSelect ? sectionSelect.value : '');
+                    
+                    // セレクトボックスのイベント設定（既にある場合は上書き）
+                    if (sectionSelect) {
+                        // クローンして置換することでイベントリスナーをリセット
+                        const newSelect = sectionSelect.cloneNode(true);
+                        sectionSelect.parentNode.replaceChild(newSelect, sectionSelect);
+                        
+                        newSelect.addEventListener('change', (e) => {
+                            const selectedId = e.target.value;
+                            
+                            // コンテンツカードのフィルタリング
+                            const cards = document.querySelectorAll('.module-card');
+                            let hasVisible = false;
+                            cards.forEach(card => {
+                                if (!selectedId || card.dataset.sectionId === selectedId) {
+                                    card.style.display = 'block';
+                                    hasVisible = true;
+                                } else {
+                                    card.style.display = 'none';
+                                }
+                            });
+                            
+                            const emptyMsg = document.getElementById('empty-message');
+                            if (emptyMsg) emptyMsg.style.display = hasVisible ? 'none' : 'block';
+
+                            renderProgress(selectedId);
+                        });
+                    }
 
                 } catch (e) {
                     console.error(e);
                     container.innerHTML = '<p class="text-red-500 col-span-full text-center">コンテンツの読み込みに失敗しました。</p>';
                 }
+            }
 
-                // 進捗バー描画関数
-                function renderProgress(filterSectionId = '') {
-                    if (!progressContainer) return;
-                    
-                    // フィルタリング
-                    const displayProgress = filterSectionId 
-                        ? allPhaseProgress.filter(p => p.section_id == filterSectionId)
-                        : allPhaseProgress;
-
-                    if (displayProgress.length === 0) {
-                        progressContainer.innerHTML = '<p class="text-gray-500">表示する進捗データがありません。</p>';
-                        return;
-                    }
-
-                    // 進捗があるフェーズのみ表示、または全フェーズ表示？
-                    // ここでは全フェーズ表示し、進捗0%でも表示する
-                    progressContainer.innerHTML = displayProgress.map(p => \`
-                        <div class="mb-4">
-                            <div class="flex justify-between mb-1">
-                                <span class="text-sm font-medium text-gray-700">
-                                    <span class="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded mr-2">\${p.section_name}</span>
-                                    \${p.phase_name}
-                                </span>
-                                <span class="text-sm font-medium text-blue-700">\${p.percentage}%</span>
-                            </div>
-                            <div class="w-full bg-gray-200 rounded-full h-2.5">
-                                <div class="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style="width: \${p.percentage}%"></div>
-                            </div>
-                            <div class="text-right text-xs text-gray-400 mt-1">
-                                \${p.completed_steps} / \${p.total_steps} ステップ完了
-                            </div>
-                        </div>
-                    \`).join('');
-                }
             });
         </script>
     </body>
@@ -1799,7 +2059,7 @@ app.get('/student/modules/:id', async (c) => {
         <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <script src="https://unpkg.com/function-plot/dist/function-plot.js"></script>
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
         <script>
@@ -2129,10 +2389,13 @@ app.get('/student/modules/:id', async (c) => {
                 \`).join('');
             }
 
+            let answeredQuestions = new Set();
+
             async function loadStepContent(index) {
                 currentStepIndex = index;
                 const step = steps[index];
                 currentStep = step || null;
+                answeredQuestions.clear();
                 
                 document.querySelectorAll('.step-btn').forEach(btn => {
                     if (parseInt(btn.dataset.index) === index) {
@@ -2147,12 +2410,31 @@ app.get('/student/modules/:id', async (c) => {
                 
                 document.getElementById('prev-btn').onclick = () => loadStepContent(index - 1);
                 document.getElementById('next-btn').onclick = async () => {
+                    // 全問正解チェック
+                    if (currentQuestions && currentQuestions.length > 0) {
+                        const unanswered = currentQuestions.filter(q => !answeredQuestions.has(q.id));
+                        if (unanswered.length > 0) {
+                            Swal.fire({
+                                icon: 'warning',
+                                title: '未回答の問題があります',
+                                text: 'すべての問題に正解してから次に進んでください。'
+                            });
+                            return;
+                        }
+                    }
+
                     try {
                         await axios.post('/api/progress', {
                             module_id: MODULE_ID,
                             step_id: step.id,
                             status: 'completed'
                         });
+                        
+                        // 進捗バーを即時更新
+                        const progressRes = await axios.get('/api/student/phase-progress');
+                        allPhaseProgress = progressRes.data.progress;
+                        renderProgress();
+                        
                     } catch(e) { console.error(e); }
 
                     if (index < steps.length - 1) loadStepContent(index + 1);
@@ -2183,76 +2465,85 @@ app.get('/student/modules/:id', async (c) => {
                     <div class="space-y-8">
                 \`;
 
-                blocks.forEach((b, idx) => {
-                    const blockId = 'graph-' + b.id;
-                    const chartId = 'chart-' + b.id;
-                    if(b.block_type === 'text') {
-                        html += \`<div class="prose max-w-none">\${marked.parse(b.content.text || '')}</div>\`;
-                    } else if(b.block_type === 'image') {
-                        html += \`<img src="\${b.content.url}" class="rounded-xl shadow-lg mx-auto max-h-96">\`;
-                    } else if(b.block_type === 'youtube') {
-                        html += \`<div class="aspect-video rounded-xl overflow-hidden shadow-lg"><iframe class="w-full h-full" src="https://www.youtube.com/embed/\${b.content.videoId}" frameborder="0" allowfullscreen></iframe></div>\`;
-                    } else if(b.block_type === 'shape') {
-                        html += \`<div class="flex justify-center">\${renderShape(b.content)}</div>\`;
-                    } else if(b.block_type === 'graph') {
-                        html += \`<div id="\${blockId}" class="flex justify-center bg-white rounded-xl border p-4"></div>\`;
-                    } else if(b.block_type === 'chart') {
-                        html += \`<div class="flex justify-center bg-white rounded-xl border p-4 h-64"><canvas id="\${chartId}"></canvas></div>\`;
-                    }
-                });
+                // ブロックと問題を統合してorder_indexでソート
+                const blocksWithType = blocks.map(b => ({ ...b, type: 'block' }));
+                const questionsWithType = questions.map(q => ({ ...q, type: 'question' }));
+                const allItems = [...blocksWithType, ...questionsWithType].sort((a, b) => a.order_index - b.order_index);
 
-                questions.forEach(q => {
-                    html += \`
-                        <div class="bg-indigo-50 p-6 rounded-xl border border-indigo-100">
-                            <div class="flex items-center gap-2 mb-4">
-                                <span class="bg-indigo-600 text-white text-xs font-bold px-2 py-1 rounded">問題</span>
-                                <h3 class="font-bold text-indigo-900">\${q.question_text}</h3>
-                            </div>
-                    \`;
+                // 統合されたアイテムを順番に表示
+                allItems.forEach(item => {
+                    if (item.type === 'block') {
+                        const b = item;
+                        const blockId = 'graph-' + b.id;
+                        const chartId = 'chart-' + b.id;
+                        if(b.block_type === 'text') {
+                            html += \`<div class="prose max-w-none">\${marked.parse(b.content.text || '')}</div>\`;
+                        } else if(b.block_type === 'image') {
+                            html += \`<img src="\${b.content.url}" class="rounded-xl shadow-lg mx-auto max-h-96">\`;
+                        } else if(b.block_type === 'youtube') {
+                            html += \`<div class="aspect-video rounded-xl overflow-hidden shadow-lg"><iframe class="w-full h-full" src="https://www.youtube.com/embed/\${b.content.videoId}" frameborder="0" allowfullscreen></iframe></div>\`;
+                        } else if(b.block_type === 'shape') {
+                            html += \`<div class="flex justify-center">\${renderShape(b.content)}</div>\`;
+                        } else if(b.block_type === 'graph') {
+                            html += \`<div id="\${blockId}" class="flex justify-center bg-white rounded-xl border p-4"></div>\`;
+                        } else if(b.block_type === 'chart') {
+                            html += \`<div class="flex justify-center bg-white rounded-xl border p-4 h-64"><canvas id="\${chartId}"></canvas></div>\`;
+                        }
+                    } else if (item.type === 'question') {
+                        const q = item;
+                        html += \`
+                            <div class="bg-indigo-50 p-6 rounded-xl border border-indigo-100">
+                                <div class="flex items-center gap-2 mb-4">
+                                    <span class="bg-indigo-600 text-white text-xs font-bold px-2 py-1 rounded">問題</span>
+                                    <h3 class="font-bold text-indigo-900">\${q.question_text}</h3>
+                                </div>
+                        \`;
 
-                    if (q.question_type === 'multiple_choice') {
-                        html += '<div class="space-y-2">';
-                        q.options.forEach(opt => {
+                        if (q.question_type === 'multiple_choice') {
+                            html += '<div class="space-y-2">';
+                            q.options.forEach(opt => {
+                                html += \`
+                                    <button onclick="checkAnswer(this, \${opt.is_correct}, \${q.id})" class="w-full p-4 text-left bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 transition shadow-sm">
+                                        \${opt.option_text}
+                                    </button>
+                                \`;
+                            });
+                            html += '</div>';
+                        } else if (q.question_type === 'short_answer') {
+                            const correct = q.options.find(o => o.is_correct)?.option_text || '';
                             html += \`
-                                <button onclick="checkAnswer(this, \${opt.is_correct})" class="w-full p-4 text-left bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 transition shadow-sm">
-                                    \${opt.option_text}
+                                <div class="flex gap-2">
+                                    <input type="text" id="input-\${q.id}" class="flex-1 p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="回答を入力">
+                                    <button onclick="checkShortAnswer('input-\${q.id}', '\${correct}', \${q.id})" class="bg-indigo-600 text-white px-6 rounded-lg font-bold hover:bg-indigo-700">回答</button>
+                                </div>
+                            \`;
+                        } else if (q.question_type === 'ordering') {
+                            const shuffledOptions = [...(q.options || [])].sort(() => Math.random() - 0.5);
+                            html += \`
+                                <div id="sortable-q-\${q.id}" class="space-y-2 mb-4">
+                                    \${shuffledOptions.map(opt => \`
+                                        <div class="p-3 bg-white border border-indigo-200 rounded-lg cursor-move flex items-center gap-3 shadow-sm hover:bg-indigo-50 transition" data-id="\${opt.id}">
+                                            <i class="fas fa-grip-vertical text-indigo-300"></i>
+                                            <span class="text-indigo-900 font-medium">\${opt.option_text}</span>
+                                        </div>
+                                    \`).join('')}
+                                </div>
+                                <button onclick="checkOrdering(\${q.id})" class="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700 transition w-full md:w-auto shadow">
+                                    <i class="fas fa-check-circle mr-2"></i>回答する
                                 </button>
                             \`;
-                        });
-                        html += '</div>';
-                    } else if (q.question_type === 'short_answer') {
-                        const correct = q.options.find(o => o.is_correct)?.option_text || '';
-                        html += \`
-                            <div class="flex gap-2">
-                                <input type="text" id="input-\${q.id}" class="flex-1 p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="回答を入力">
-                                <button onclick="checkShortAnswer('input-\${q.id}', '\${correct}')" class="bg-indigo-600 text-white px-6 rounded-lg font-bold hover:bg-indigo-700">回答</button>
-                            </div>
-                        \`;
-                    } else if (q.question_type === 'ordering') {
-                        const shuffledOptions = [...(q.options || [])].sort(() => Math.random() - 0.5);
-                        html += \`
-                            <div id="sortable-q-\${q.id}" class="space-y-2 mb-4">
-                                \${shuffledOptions.map(opt => \`
-                                    <div class="p-3 bg-white border border-indigo-200 rounded-lg cursor-move flex items-center gap-3 shadow-sm hover:bg-indigo-50 transition" data-id="\${opt.id}">
-                                        <i class="fas fa-grip-vertical text-indigo-300"></i>
-                                        <span class="text-indigo-900 font-medium">\${opt.option_text}</span>
-                                    </div>
-                                \`).join('')}
-                            </div>
-                            <button onclick="checkOrdering(\${q.id})" class="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700 transition w-full md:w-auto shadow">
-                                <i class="fas fa-check-circle mr-2"></i>回答する
-                            </button>
-                        \`;
-                    }
+                        }
 
-                    html += '</div>';
+                        html += '</div>';
+                    }
                 });
 
                 html += '</div>';
                 container.innerHTML = html;
 
                 setTimeout(() => {
-                    questions.forEach(q => {
+                    // 問題のSortable初期化
+                    allItems.filter(item => item.type === 'question').forEach(q => {
                         if(q.question_type === 'ordering') {
                             const el = document.getElementById('sortable-q-' + q.id);
                             if(el && typeof Sortable !== 'undefined') {
@@ -2261,7 +2552,8 @@ app.get('/student/modules/:id', async (c) => {
                         }
                     });
 
-                    blocks.forEach(b => {
+                    // ブロックのグラフとチャート初期化
+                    allItems.filter(item => item.type === 'block').forEach(b => {
                         if(b.block_type === 'graph') {
                             const data = [{ fn: b.content.fn, color: '#4f46e5' }];
                             if (b.content.points) {
@@ -2380,27 +2672,37 @@ app.get('/student/modules/:id', async (c) => {
                 return \`<svg width="200" height="200" viewBox="0 0 200 200">\${svgContent}</svg>\`;
             }
 
-            window.checkAnswer = function(btn, isCorrect) {
+            window.checkAnswer = function(btn, isCorrect, questionId) {
                 if (isCorrect) {
                     btn.classList.remove('bg-white', 'hover:bg-indigo-50');
                     btn.classList.add('bg-green-100', 'border-green-500', 'text-green-800');
-                    btn.innerHTML += '<i class="fas fa-check float-right text-green-600"></i>';
+                    if(!btn.innerHTML.includes('fa-check')) {
+                        btn.innerHTML += '<i class="fas fa-check float-right text-green-600"></i>';
+                    }
+                    if(questionId) answeredQuestions.add(questionId);
                 } else {
                     btn.classList.remove('bg-white', 'hover:bg-indigo-50');
                     btn.classList.add('bg-red-100', 'border-red-500', 'text-red-800');
-                    btn.innerHTML += '<i class="fas fa-times float-right text-red-600"></i>';
+                    if(!btn.innerHTML.includes('fa-times')) {
+                        btn.innerHTML += '<i class="fas fa-times float-right text-red-600"></i>';
+                    }
                 }
             };
 
-            window.checkShortAnswer = function(inputId, correct) {
+            window.checkShortAnswer = function(inputId, correct, questionId) {
                 const input = document.getElementById(inputId);
                 const val = input.value.trim();
+                // 数値の場合は柔軟に比較（全角半角、カンマなど）
+                // 簡易実装として文字列比較
                 if (val === correct) {
+                    input.classList.remove('border-red-500', 'bg-red-50');
                     input.classList.add('border-green-500', 'bg-green-50');
-                    Swal.fire({ icon: 'info', text: '正解！' });
+                    Swal.fire({ icon: 'success', text: '正解！', timer: 1500, showConfirmButton: false });
+                    if(questionId) answeredQuestions.add(questionId);
                 } else {
+                    input.classList.remove('border-green-500', 'bg-green-50');
                     input.classList.add('border-red-500', 'bg-red-50');
-                    Swal.fire({ icon: 'info', text: '不正解...' });
+                    Swal.fire({ icon: 'error', text: '不正解...' });
                 }
             };
 
@@ -2420,6 +2722,7 @@ app.get('/student/modules/:id', async (c) => {
                 
                 if (isCorrect) {
                     Swal.fire({ icon: 'success', title: '正解！', text: '正しい順序です' });
+                    answeredQuestions.add(questionId);
                 } else {
                     Swal.fire({ icon: 'error', title: '不正解...', text: 'もう一度挑戦してみましょう' });
                 }
@@ -2511,11 +2814,22 @@ app.get('/api/teacher/modules', async (c) => {
   let query = 'SELECT * FROM modules'
   if (phase_id) {
     query += ' WHERE phase_id = ?'
-    const result = await DB.prepare(query + ' ORDER BY order_index').bind(phase_id).all()
+    const result = await DB.prepare(`
+        SELECT m.*, p.section_id 
+        FROM modules m 
+        JOIN phases p ON m.phase_id = p.id
+        WHERE m.phase_id = ?
+        ORDER BY m.order_index
+    `).bind(phase_id).all()
     return c.json({ modules: result.results })
   }
   
-  const result = await DB.prepare(query + ' ORDER BY order_index').all()
+  const result = await DB.prepare(`
+    SELECT m.*, p.section_id 
+    FROM modules m 
+    JOIN phases p ON m.phase_id = p.id
+    ORDER BY m.order_index
+  `).all()
   return c.json({ modules: result.results })
 })
 
@@ -2803,6 +3117,53 @@ app.delete('/api/teacher/question-options/:id', async (c) => {
   return c.json({ success: true })
 })
 
+// 並べ替えAPI
+app.post('/api/teacher/reorder/:type', async (c) => {
+  const { DB } = c.env
+  const type = c.req.param('type')
+  const { items } = await c.req.json()
+
+  if (!items || !Array.isArray(items)) {
+    return c.json({ error: 'Invalid items' }, 400)
+  }
+
+  try {
+    if (type === 'content') {
+        const stmtBlock = DB.prepare('UPDATE content_blocks SET order_index = ? WHERE id = ?')
+        const stmtQuestion = DB.prepare('UPDATE questions SET order_index = ? WHERE id = ?')
+        
+        const batch = []
+        for (const item of items) {
+            if (item.type === 'block') {
+                batch.push(stmtBlock.bind(item.order_index, item.id))
+            } else if (item.type === 'question') {
+                batch.push(stmtQuestion.bind(item.order_index, item.id))
+            }
+        }
+        if(batch.length > 0) await DB.batch(batch)
+    } else if (type === 'modules') {
+        const stmt = DB.prepare('UPDATE modules SET order_index = ? WHERE id = ?')
+        const batch = items.map(item => stmt.bind(item.order_index, item.id))
+        if(batch.length > 0) await DB.batch(batch)
+    } else if (type === 'steps') {
+        const stmt = DB.prepare('UPDATE steps SET order_index = ? WHERE id = ?')
+        const batch = items.map(item => stmt.bind(item.order_index, item.id))
+        if(batch.length > 0) await DB.batch(batch)
+    } else if (type === 'phases') {
+        const stmt = DB.prepare('UPDATE phases SET order_index = ? WHERE id = ?')
+        const batch = items.map(item => stmt.bind(item.order_index, item.id))
+        if(batch.length > 0) await DB.batch(batch)
+    } else {
+        return c.json({ error: 'Invalid type' }, 400)
+    }
+    
+    return c.json({ success: true })
+  } catch(e) {
+    console.error('Reorder Error:', e)
+    return c.json({ error: 'Failed to reorder' }, 500)
+  }
+})
+
 // ==================== Teacher Admin UI Routes ====================
 
 // セクション管理画面
@@ -2816,7 +3177,7 @@ app.get('/teacher/sections', (c) => {
         <title>セクション管理 - 学習アプリ開発プラットフォーム</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
     </head>
     <body class="bg-gray-50 min-h-screen">
         <!-- ナビゲーションバー -->
@@ -3071,7 +3432,7 @@ app.get('/teacher/phases', (c) => {
         <title>フェーズ管理 - 学習アプリ開発プラットフォーム</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
     </head>
     <body class="bg-gray-50 min-h-screen">
         <!-- ナビゲーションバー -->
@@ -3356,7 +3717,8 @@ app.get('/teacher/modules', (c) => {
         <title>モジュール管理 - 学習アプリ開発プラットフォーム</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     </head>
     <body class="bg-gray-50 min-h-screen">
         <!-- ナビゲーションバー -->
@@ -3566,10 +3928,11 @@ app.get('/teacher/modules', (c) => {
               }
               
               listEl.innerHTML = modules.map(module => \`
-                <div class="border-2 border-gray-200 rounded-lg p-6 hover:border-blue-400 transition">
+                <div class="border-2 border-gray-200 rounded-lg p-6 hover:border-blue-400 transition bg-white cursor-move" data-id="\${module.id}">
                   <div class="flex justify-between items-start">
                     <div class="flex-1">
                       <div class="flex items-center gap-3 mb-2">
+                        <i class="fas fa-grip-vertical text-gray-300 mr-2"></i>
                         <span class="text-3xl">\${module.icon || '📚'}</span>
                         <h3 class="text-xl font-bold text-gray-800">\${module.name}</h3>
                         <span class="px-3 py-1 bg-\${module.color || 'blue'}-100 text-\${module.color || 'blue'}-700 rounded-full text-sm">
@@ -3590,6 +3953,26 @@ app.get('/teacher/modules', (c) => {
                   </div>
                 </div>
               \`).join('');
+              // Sortable適用
+              if (modules.length > 0) {
+                  new Sortable(listEl, {
+                      animation: 150,
+                      handle: '.cursor-move',
+                      onEnd: async function() {
+                          const items = Array.from(listEl.children).map((el, index) => ({
+                              id: el.dataset.id,
+                              order_index: index
+                          }));
+                          
+                          try {
+                              await axios.post('/api/teacher/reorder/modules', { items });
+                          } catch(e) {
+                              console.error(e);
+                              Swal.fire({ icon: 'error', title: 'エラー', text: '並べ替えの保存に失敗しました' });
+                          }
+                      }
+                  });
+              }
             } catch (error) {
               console.error('モジュールの読み込みエラー:', error);
               document.getElementById('modules-list').innerHTML = '<p class="text-red-500 text-center py-8">エラーが発生しました</p>';
@@ -3600,10 +3983,10 @@ app.get('/teacher/modules', (c) => {
           document.getElementById('create-module-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            // phase_idはURLパラメータから取得するか、セレクトボックスから取得する
-            let phaseId = urlParams.get('phase_id');
+            // phase_idはセレクトボックスから取得する（なければURLパラメータ）
+            let phaseId = document.getElementById('phase-select').value;
             if (!phaseId) {
-               phaseId = document.getElementById('phase-select').value;
+               phaseId = urlParams.get('phase_id');
             }
 
             if (!phaseId) {
@@ -3669,7 +4052,8 @@ app.get('/teacher/steps', (c) => {
         <title>ステップ管理 - 学習アプリ開発プラットフォーム</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
     </head>
     <body class="bg-gray-50 min-h-screen">
         <!-- ナビゲーションバー -->
@@ -3876,10 +4260,11 @@ app.get('/teacher/steps', (c) => {
               }
               
               listEl.innerHTML = steps.map((step, index) => \`
-                <div class="border-2 border-gray-200 rounded-lg p-6 hover:border-blue-400 transition bg-white shadow-sm">
+                <div class="border-2 border-gray-200 rounded-lg p-6 hover:border-blue-400 transition bg-white shadow-sm cursor-move" data-id="\${step.id}">
                   <div class="flex justify-between items-start">
                     <div class="flex-1">
                       <div class="flex items-center gap-3 mb-2">
+                        <i class="fas fa-grip-vertical text-gray-300 mr-2"></i>
                         <span class="flex items-center justify-center w-8 h-8 bg-blue-500 text-white rounded-full font-bold">
                           \${index + 1}
                         </span>
@@ -3904,6 +4289,28 @@ app.get('/teacher/steps', (c) => {
                   </div>
                 </div>
               \`).join('');
+              // Sortable適用
+              if (steps.length > 0) {
+                  new Sortable(listEl, {
+                      animation: 150,
+                      handle: '.cursor-move',
+                      onEnd: async function() {
+                          const items = Array.from(listEl.children).map((el, index) => ({
+                              id: el.dataset.id,
+                              order_index: index
+                          }));
+                          
+                          try {
+                              await axios.post('/api/teacher/reorder/steps', { items });
+                              // 番号を再描画するのは少し面倒なので、リロードせずにそのままにするか、
+                              // 簡易的に番号だけ書き換えるか。今回はそのまま。
+                          } catch(e) {
+                              console.error(e);
+                              Swal.fire({ icon: 'error', title: 'エラー', text: '並べ替えの保存に失敗しました' });
+                          }
+                      }
+                  });
+              }
             } catch (error) {
               console.error('ステップの読み込みエラー:', error);
               document.getElementById('steps-list').innerHTML = '<p class="text-red-500 text-center py-8">エラーが発生しました</p>';
@@ -3914,10 +4321,10 @@ app.get('/teacher/steps', (c) => {
           document.getElementById('create-step-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             
-            // module_idはURLパラメータから取得するか、セレクトボックスから取得する
-            let moduleId = urlParams.get('module_id');
+            // module_idはセレクトボックスから取得する（なければURLパラメータ）
+            let moduleId = document.getElementById('module-select').value;
             if (!moduleId) {
-               moduleId = document.getElementById('module-select').value;
+               moduleId = urlParams.get('module_id');
             }
 
             if (!moduleId) {
@@ -4038,7 +4445,7 @@ app.get('/teacher/content', (c) => {
         <!-- Function Plot -->
         <script src="https://unpkg.com/function-plot/dist/function-plot.js"></script>
         <!-- MathJax -->
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
         <script>
           window.MathJax = {
@@ -4251,9 +4658,12 @@ app.get('/teacher/content', (c) => {
         <script>
           // Auth Token Setup
           const token = localStorage.getItem('token');
+          console.log('Token:', token ? 'exists' : 'missing');
           if (token) {
               axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
+              console.log('Authorization header set');
           } else {
+              console.log('No token found, redirecting to login');
               window.location.href = '/login';
           }
             let currentStepId = null;
@@ -4261,6 +4671,7 @@ app.get('/teacher/content', (c) => {
 
             // 初期化
             document.addEventListener('DOMContentLoaded', () => {
+                console.log('DOM loaded, loading sections...');
                 loadSections();
                 
                 // URLパラメータからstep_idを取得
@@ -4278,57 +4689,104 @@ app.get('/teacher/content', (c) => {
 
             // 階層データの読み込み
             async function loadSections() {
-                const res = await axios.get('/api/teacher/sections');
-                const sections = res.data.sections;
-                const select = document.getElementById('section-select');
-                select.innerHTML = '<option value="">選択してください</option>' + 
-                    sections.map(s => \`<option value="\${s.id}">\${s.name}</option>\`).join('');
-                
-                select.addEventListener('change', e => {
-                    if(e.target.value) loadPhases(e.target.value);
-                    else disableSelects(['phase', 'module', 'step']);
-                });
+                try {
+                    const res = await axios.get('/api/teacher/sections');
+                    const sections = res.data.sections;
+                    const select = document.getElementById('section-select');
+                    
+                    // 選択肢を設定
+                    select.innerHTML = '<option value="">選択してください</option>' + 
+                        sections.map(s => \`<option value="\${s.id}">\${s.name}</option>\`).join('');
+                    
+                    // イベントリスナーを設定（oneパラメータを使わずに直接設定）
+                    select.onchange = function(e) {
+                        console.log('Section changed:', this.value);
+                        if(this.value) {
+                            loadPhases(this.value);
+                        } else {
+                            disableSelects(['phase', 'module', 'step']);
+                        }
+                    };
+                } catch(e) {
+                    console.error('loadSections error:', e);
+                    Swal.fire({ icon: 'error', title: 'エラー', text: 'セクションの読み込みに失敗しました' });
+                }
             }
 
             async function loadPhases(sectionId) {
-                const res = await axios.get(\`/api/teacher/phases?section_id=\${sectionId}\`);
-                const select = document.getElementById('phase-select');
-                select.disabled = false;
-                select.innerHTML = '<option value="">選択してください</option>' + 
-                    res.data.phases.map(p => \`<option value="\${p.id}">\${p.name}</option>\`).join('');
-                
-                disableSelects(['module', 'step']);
-                select.addEventListener('change', e => {
-                    if(e.target.value) loadModules(e.target.value);
-                    else disableSelects(['module', 'step']);
-                });
+                try {
+                    console.log('Loading phases for section:', sectionId);
+                    const res = await axios.get(\`/api/teacher/phases?section_id=\${sectionId}\`);
+                    const select = document.getElementById('phase-select');
+                    select.disabled = false;
+                    select.innerHTML = '<option value="">選択してください</option>' + 
+                        res.data.phases.map(p => \`<option value="\${p.id}">\${p.name}</option>\`).join('');
+                    
+                    disableSelects(['module', 'step']);
+                    
+                    // イベントリスナーを設定
+                    select.onchange = function(e) {
+                        console.log('Phase changed:', this.value);
+                        if(this.value) {
+                            loadModules(this.value);
+                        } else {
+                            disableSelects(['module', 'step']);
+                        }
+                    };
+                } catch(e) {
+                    console.error('loadPhases error:', e);
+                    Swal.fire({ icon: 'error', title: 'エラー', text: 'フェーズの読み込みに失敗しました' });
+                }
             }
 
             async function loadModules(phaseId) {
-                const res = await axios.get(\`/api/teacher/modules?phase_id=\${phaseId}\`);
-                const select = document.getElementById('module-select');
-                select.disabled = false;
-                select.innerHTML = '<option value="">選択してください</option>' + 
-                    res.data.modules.map(m => \`<option value="\${m.id}">\${m.name}</option>\`).join('');
-                
-                disableSelects(['step']);
-                select.addEventListener('change', e => {
-                    if(e.target.value) loadSteps(e.target.value);
-                    else disableSelects(['step']);
-                });
+                try {
+                    console.log('Loading modules for phase:', phaseId);
+                    const res = await axios.get(\`/api/teacher/modules?phase_id=\${phaseId}\`);
+                    const select = document.getElementById('module-select');
+                    select.disabled = false;
+                    select.innerHTML = '<option value="">選択してください</option>' + 
+                        res.data.modules.map(m => \`<option value="\${m.id}">\${m.name}</option>\`).join('');
+                    
+                    disableSelects(['step']);
+                    
+                    // イベントリスナーを設定
+                    select.onchange = function(e) {
+                        console.log('Module changed:', this.value);
+                        if(this.value) {
+                            loadSteps(this.value);
+                        } else {
+                            disableSelects(['step']);
+                        }
+                    };
+                } catch(e) {
+                    console.error('loadModules error:', e);
+                    Swal.fire({ icon: 'error', title: 'エラー', text: 'モジュールの読み込みに失敗しました' });
+                }
             }
 
             async function loadSteps(moduleId) {
-                const res = await axios.get(\`/api/teacher/steps?module_id=\${moduleId}\`);
-                const select = document.getElementById('step-select');
-                select.disabled = false;
-                select.innerHTML = '<option value="">選択してください</option>' + 
-                    res.data.steps.map(s => \`<option value="\${s.id}">\${s.title}</option>\`).join('');
-                
-                select.addEventListener('change', e => {
-                    if(e.target.value) loadContent(e.target.value, e.target.options[e.target.selectedIndex].text);
-                    else document.getElementById('editor-area').classList.add('hidden');
-                });
+                try {
+                    console.log('Loading steps for module:', moduleId);
+                    const res = await axios.get(\`/api/teacher/steps?module_id=\${moduleId}\`);
+                    const select = document.getElementById('step-select');
+                    select.disabled = false;
+                    select.innerHTML = '<option value="">選択してください</option>' + 
+                        res.data.steps.map(s => \`<option value="\${s.id}">\${s.title}</option>\`).join('');
+                    
+                    // イベントリスナーを設定
+                    select.onchange = function(e) {
+                        console.log('Step changed:', this.value);
+                        if(this.value) {
+                            loadContent(this.value, this.options[this.selectedIndex].text);
+                        } else {
+                            document.getElementById('editor-area').classList.add('hidden');
+                        }
+                    };
+                } catch(e) {
+                    console.error('loadSteps error:', e);
+                    Swal.fire({ icon: 'error', title: 'エラー', text: 'ステップの読み込みに失敗しました' });
+                }
             }
 
             function disableSelects(names) {
@@ -4422,15 +4880,43 @@ app.get('/teacher/content', (c) => {
                         }, 300);
                     }
                 });
+
+                // Sortable適用
+                if (allItems.length > 0 && typeof Sortable !== 'undefined') {
+                    if(container._sortable) container._sortable.destroy();
+                    
+                    container._sortable = new Sortable(container, {
+                        animation: 150,
+                        handle: '.cursor-move',
+                        filter: 'input, textarea, button, select, option',
+                        preventOnFilter: false,
+                        onEnd: async function() {
+                            const items = Array.from(container.children).map((el, index) => ({
+                                id: el.dataset.id,
+                                type: el.dataset.type,
+                                order_index: index
+                            }));
+                            
+                            try {
+                                await axios.post('/api/teacher/reorder/content', { items });
+                            } catch(e) {
+                                console.error(e);
+                                Swal.fire({ icon: 'error', title: 'エラー', text: '並べ替えの保存に失敗しました' });
+                            }
+                        }
+                    });
+                }
             }
 
             // アイテム要素作成
             function createItemElement(item) {
                 const div = document.createElement('div');
+                div.dataset.id = item.id;
+                div.dataset.type = item.type;
                 
                 if (item.type === 'block') {
                     // コンテンツブロック
-                    div.className = 'content-block bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative group mb-4';
+                    div.className = 'content-block bg-white border border-gray-200 rounded-xl p-4 shadow-sm relative group mb-4 cursor-move';
                     const block = item;
                     
                     let contentHtml = '';
@@ -4446,6 +4932,11 @@ app.get('/teacher/content', (c) => {
                         contentHtml = \`
                             <div class="mb-2 font-bold text-gray-500 text-xs uppercase flex items-center">
                                 <i class="fas fa-image mr-2"></i>画像
+                            </div>
+                            <div class="mb-2">
+                                <label class="block text-sm font-medium text-gray-700 mb-1">ファイルをアップロード</label>
+                                <input type="file" accept="image/*" onchange="uploadImage(\${block.id}, this)" class="w-full p-2 border rounded-lg text-sm">
+                                <div class="text-xs text-gray-400 mt-1">または下にURLを直接入力してください</div>
                             </div>
                             <input type="text" value="\${block.content.url || ''}" onchange="updateBlock(\${block.id}, 'url', this.value)" placeholder="画像URL (https://...)" class="w-full p-2 border rounded-lg mb-2">
                             \${block.content.url ? \`<img src="\${block.content.url}" class="max-h-40 rounded border shadow-sm">\` : ''}
@@ -4707,7 +5198,7 @@ app.get('/teacher/content', (c) => {
                         icon = 'fa-keyboard';
                     }
 
-                    div.className = \`content-block \${bgColor} border rounded-xl p-4 shadow-sm relative group mb-4\`;
+                    div.className = \`content-block \${bgColor} border rounded-xl p-4 shadow-sm relative group mb-4 cursor-move\`;
                     
                     let editorHtml = \`
                         <div class="mb-4">
@@ -4799,9 +5290,9 @@ app.get('/teacher/content', (c) => {
             function renderOptionHtml(qId, opt) {
                 return \`
                     <div class="flex items-center gap-2" id="option-\${opt.id}">
-                        <input type="radio" name="correct_\${qId}" \${opt.is_correct ? 'checked' : ''} 
-                               onchange="updateOption(\${opt.id}, {is_correct: 1})"
-                               class="text-blue-600 focus:ring-blue-500 cursor-pointer" title="正解を選択">
+                        <input type="checkbox" \${opt.is_correct ? 'checked' : ''} 
+                               onchange="updateOption(\${opt.id}, {is_correct: this.checked ? 1 : 0})"
+                               class="h-5 w-5 text-blue-600 focus:ring-blue-500 cursor-pointer border-gray-300 rounded" title="正解を選択">
                         <input type="text" value="\${opt.option_text}" 
                                onchange="updateOption(\${opt.id}, {option_text: this.value})"
                                class="flex-1 p-2 border rounded text-sm" placeholder="選択肢を入力">
@@ -5330,13 +5821,21 @@ app.get('/teacher/content', (c) => {
                         is_correct: 0
                     };
                     
+                    // allItemsの更新
+                    const qItem = allItems.find(i => i.id === questionId && i.type === 'question');
+                    if (qItem) {
+                        if (!qItem.options) qItem.options = [];
+                        qItem.options.push(newOpt);
+                    }
+                    
                     const container = document.getElementById(\`options-container-\${questionId}\`);
-                    const btn = container.querySelector('button');
+                    const btn = container.lastElementChild;
                     const div = document.createElement('div');
                     div.innerHTML = renderOptionHtml(questionId, newOpt);
                     container.insertBefore(div.firstElementChild, btn);
                     
                 } catch(e) {
+                    console.error(e);
                     Swal.fire({ icon: 'error', title: 'エラー', text: '追加に失敗しました' });
                 }
             }
@@ -5379,15 +5878,6 @@ app.get('/teacher/content', (c) => {
                 const newData = { ...currentOption, ...data };
                 
                 try {
-                    // 正解フラグが立った場合、他の選択肢を不正解にする処理
-                    if (data.is_correct === 1 && currentQuestion.question_type === 'multiple_choice') {
-                        for (const opt of currentQuestion.options) {
-                            if (opt.id !== id && opt.is_correct) {
-                                await axios.put(\`/api/teacher/question-options/\${opt.id}\`, { ...opt, is_correct: 0 });
-                            }
-                        }
-                    }
-
                     await axios.put(\`/api/teacher/question-options/\${id}\`, newData);
                     
                     // UIリロード（正解マークの移動などを反映するため）
@@ -5570,6 +6060,88 @@ app.get('/teacher/content', (c) => {
                 }
             };
 
+            // ブロックのコンテンツを更新する関数
+            async function updateBlockContent(blockId, content) {
+                try {
+                    await axios.put(\`/api/teacher/content-blocks/\${blockId}\`, {
+                        content: content
+                    });
+                } catch(e) {
+                    console.error('Update block error:', e);
+                    throw e;
+                }
+            }
+
+            // 画像アップロード関数
+            async function uploadImage(blockId, inputElement) {
+                const file = inputElement.files[0];
+                if (!file) return;
+                
+                // ファイルサイズチェック（5MB）
+                if (file.size > 5 * 1024 * 1024) {
+                    Swal.fire({ icon: 'error', title: 'エラー', text: 'ファイルサイズが大きすぎます（最大5MB）' });
+                    inputElement.value = '';
+                    return;
+                }
+                
+                // ファイルタイプチェック
+                if (!file.type.startsWith('image/')) {
+                    Swal.fire({ icon: 'error', title: 'エラー', text: '画像ファイルのみアップロード可能です' });
+                    inputElement.value = '';
+                    return;
+                }
+                
+                try {
+                    // FormDataを作成
+                    const formData = new FormData();
+                    formData.append('image', file);
+                    
+                    // ローディング表示
+                    Swal.fire({
+                        title: 'アップロード中...',
+                        text: '画像をアップロードしています',
+                        allowOutsideClick: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        }
+                    });
+                    
+                    // アップロード
+                    const response = await axios.post('/api/teacher/upload-image', formData, {
+                        headers: {
+                            'Content-Type': 'multipart/form-data'
+                        }
+                    });
+                    
+                    Swal.close();
+                    
+                    if (response.data.success) {
+                        // URLを更新
+                        const item = allItems.find(i => i.id === blockId);
+                        if (item) {
+                            item.content.url = response.data.url;
+                            await updateBlockContent(blockId, item.content);
+                            renderEditor();
+                            
+                            Swal.fire({ 
+                                icon: 'success', 
+                                title: 'アップロード完了', 
+                                text: '画像をアップロードしました',
+                                timer: 1500
+                            });
+                        }
+                    } else {
+                        Swal.fire({ icon: 'error', title: 'エラー', text: response.data.error || 'アップロードに失敗しました' });
+                    }
+                } catch (error) {
+                    console.error('Upload error:', error);
+                    Swal.close();
+                    Swal.fire({ icon: 'error', title: 'エラー', text: 'アップロードに失敗しました: ' + (error.response?.data?.error || error.message) });
+                } finally {
+                    inputElement.value = '';
+                }
+            }
+
             function closePreview() {
                 document.getElementById('preview-modal').classList.add('hidden');
             }
@@ -5590,6 +6162,7 @@ app.get('/teacher/students', (c) => {
         <title>生徒管理 - 学習アプリ開発プラットフォーム</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
     </head>
     <body class="bg-gray-50 min-h-screen">
         <nav class="bg-gradient-to-r from-green-600 to-teal-600 text-white shadow-lg">
@@ -6020,6 +6593,7 @@ app.get('/teacher/glossary', (c) => {
         <title>用語集管理 - 学習アプリ開発プラットフォーム</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
     </head>
     <body class="bg-gray-50 min-h-screen">
         <nav class="bg-gradient-to-r from-orange-600 to-red-600 text-white shadow-lg">
@@ -6240,7 +6814,7 @@ app.get('/teacher/questions', (c) => {
         <title>質問管理 - 学習アプリ開発プラットフォーム</title>
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
     </head>

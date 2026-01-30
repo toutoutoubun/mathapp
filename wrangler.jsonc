@@ -12,5 +12,12 @@
       "database_name": "webapp-production",
       "database_id": "local-dev-database"
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "IMAGES",
+      "bucket_name": "webapp-images",
+      "preview_bucket_name": "webapp-images-preview"
+    }
   ]
 }
