@@ -2199,7 +2199,7 @@ app.get('/student/modules/:id', async (c) => {
                 document.getElementById('prev-btn').onclick = () => loadStepContent(index - 1);
                 document.getElementById('next-btn').onclick = () => {
                     if (index < steps.length - 1) loadStepContent(index + 1);
-                    else { alert('モジュール完了！'); window.location.href = '/student'; }
+                    else { Swal.fire({ icon: 'info', text: 'モジュール完了！' }); window.location.href = '/student'; }
                 };
 
                 const contentArea = document.getElementById('content-area');
@@ -2415,10 +2415,10 @@ app.get('/student/modules/:id', async (c) => {
                 const val = input.value.trim();
                 if (val === correct) {
                     input.classList.add('border-green-500', 'bg-green-50');
-                    alert('正解！');
+                    Swal.fire({ icon: 'info', text: '正解！' });
                 } else {
                     input.classList.add('border-red-500', 'bg-red-50');
-                    alert('不正解...');
+                    Swal.fire({ icon: 'info', text: '不正解...' });
                 }
             };
         </script>
@@ -2828,8 +2828,6 @@ app.get('/teacher/sections', (c) => {
                         <a href="/teacher" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
                             <i class="fas fa-arrow-left mr-2"></i>トップへ戻る
                         </a>
-                            <i class="fas fa-eye mr-2"></i>生徒画面
-                        </a>
                     </div>
                 </div>
             </div>
@@ -2931,7 +2929,7 @@ app.get('/teacher/sections', (c) => {
                         <span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">
                           <i class="fas fa-book mr-1"></i>\${section.subject || '教科未設定'}
                         </span>
-                        <span class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-mono cursor-pointer" onclick="navigator.clipboard.writeText('\${section.access_code}');alert('コードをコピーしました')">
+                        <span class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm font-mono cursor-pointer" onclick="navigator.clipboard.writeText('\${section.access_code}').then(() => Swal.fire({ icon: 'success', title: '完了', text: 'コードをコピーしました', timer: 1500, showConfirmButton: false }))">
                           <i class="fas fa-key mr-1"></i>Code: \${section.access_code || '---'} <i class="fas fa-copy ml-1 opacity-50"></i>
                         </span>
                       </div>
@@ -3028,7 +3026,15 @@ app.get('/teacher/sections', (c) => {
           
           // セクション削除
           async function deleteSection(id) {
-            if (!confirm('本当にこのセクションを削除しますか？関連するフェーズ・モジュール・ステップも全て削除されます。')) {
+            const { isConfirmed } = await Swal.fire({
+        icon: 'warning',
+        title: '確認',
+        text: '本当にこのセクションを削除しますか？関連するフェーズ・モジュール・ステップも全て削除されます。',
+        showCancelButton: true,
+        confirmButtonText: 'はい',
+        cancelButtonText: 'いいえ'
+    });
+    if (!isConfirmed) {
               return;
             }
             try {
@@ -3079,8 +3085,6 @@ app.get('/teacher/phases', (c) => {
                         </a>
                         <a href="/teacher" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
                             <i class="fas fa-home mr-2"></i>トップ
-                        </a>
-                            <i class="fas fa-eye mr-1"></i>プレビュー
                         </a>
                     </div>
                 </div>
@@ -3307,7 +3311,15 @@ app.get('/teacher/phases', (c) => {
           
           // フェーズ削除
           async function deletePhase(id) {
-            if (!confirm('本当にこのフェーズを削除しますか？関連するモジュール・ステップも全て削除されます。')) {
+            const { isConfirmed } = await Swal.fire({
+        icon: 'warning',
+        title: '確認',
+        text: '本当にこのフェーズを削除しますか？関連するモジュール・ステップも全て削除されます。',
+        showCancelButton: true,
+        confirmButtonText: 'はい',
+        cancelButtonText: 'いいえ'
+    });
+    if (!isConfirmed) {
               return;
             }
             try {
@@ -3358,8 +3370,6 @@ app.get('/teacher/modules', (c) => {
                         </a>
                         <a href="/teacher" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
                             <i class="fas fa-home mr-2"></i>トップ
-                        </a>
-                            <i class="fas fa-eye mr-1"></i>プレビュー
                         </a>
                     </div>
                 </div>
@@ -3594,7 +3604,7 @@ app.get('/teacher/modules', (c) => {
             }
 
             if (!phaseId) {
-              alert('フェーズが特定できません');
+              Swal.fire({ icon: 'info', text: 'フェーズが特定できません' });
               return;
             }
             
@@ -3621,10 +3631,18 @@ app.get('/teacher/modules', (c) => {
           
           // モジュール削除
           async function deleteModule(id) {
-            if (!confirm('本当にこのモジュールを削除しますか？')) {
+            const { isConfirmed } = await Swal.fire({
+        icon: 'warning',
+        title: '確認',
+        text: '本当にこのモジュールを削除しますか？',
+        showCancelButton: true,
+        confirmButtonText: 'はい',
+        cancelButtonText: 'いいえ'
+    });
+    if (!isConfirmed) {
               return;
             }
-            alert('削除機能は今後実装予定です（ID: ' + id + '）');
+            Swal.fire({ icon: 'info', text: '削除機能は今後実装予定です（ID: ' + id + '）' });
           }
           
           // 初期化
@@ -3665,8 +3683,6 @@ app.get('/teacher/steps', (c) => {
                         </a>
                         <a href="/teacher" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
                             <i class="fas fa-home mr-2"></i>トップ
-                        </a>
-                            <i class="fas fa-eye mr-1"></i>プレビュー
                         </a>
                     </div>
                 </div>
@@ -3902,7 +3918,7 @@ app.get('/teacher/steps', (c) => {
             }
 
             if (!moduleId) {
-              alert('モジュールが特定できません');
+              Swal.fire({ icon: 'info', text: 'モジュールが特定できません' });
               return;
             }
             
@@ -3931,14 +3947,29 @@ app.get('/teacher/steps', (c) => {
                 const res = await axios.get('/api/teacher/steps/' + id);
                 const step = res.data.step;
                 
-                const newTitle = prompt('ステップのタイトルを編集:', step.title);
-                if (newTitle === null) return;
+                const { value: newTitle } = await Swal.fire({
+        title: 'ステップのタイトルを編集:',
+        input: 'text',
+        inputValue: step.title,
+        showCancelButton: true
+    });
+                if (newTitle === undefined || newTitle === null) return;
                 
-                const newDesc = prompt('説明文を編集:', step.description || '');
-                if (newDesc === null) return;
+                const { value: newDesc } = await Swal.fire({
+        title: '説明文を編集:',
+        input: 'text',
+        inputValue: step.description || '',
+        showCancelButton: true
+    });
+                if (newDesc === undefined || newDesc === null) return;
 
-                const newOrder = prompt('表示順序:', step.order_index);
-                if (newOrder === null) return;
+                const { value: newOrder } = await Swal.fire({
+        title: '表示順序:',
+        input: 'text',
+        inputValue: step.order_index,
+        showCancelButton: true
+    });
+                if (newOrder === undefined || newOrder === null) return;
 
                 await axios.put('/api/teacher/steps/' + id, {
                     title: newTitle,
@@ -3956,7 +3987,15 @@ app.get('/teacher/steps', (c) => {
           
           // ステップ削除
           async function deleteStep(id) {
-            if (!confirm('本当にこのステップを削除しますか？\\n関連するコンテンツも全て削除されます。')) {
+            const { isConfirmed } = await Swal.fire({
+        icon: 'warning',
+        title: '確認',
+        text: '本当にこのステップを削除しますか？\\n関連するコンテンツも全て削除されます。',
+        showCancelButton: true,
+        confirmButtonText: 'はい',
+        cancelButtonText: 'いいえ'
+    });
+    if (!isConfirmed) {
               return;
             }
             try {
@@ -4024,8 +4063,6 @@ app.get('/teacher/content', (c) => {
                         </a>
                         <a href="/teacher" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
                             <i class="fas fa-home mr-2"></i>トップ
-                        </a>
-                            <i class="fas fa-eye mr-1"></i>プレビュー
                         </a>
                     </div>
                 </div>
@@ -5092,7 +5129,15 @@ app.get('/teacher/content', (c) => {
 
             // ブロック削除 (UI即時反映)
             async function deleteBlock(id, btnElement) {
-                if(!confirm('削除しますか？')) return;
+                const { isConfirmed } = await Swal.fire({
+        icon: 'warning',
+        title: '確認',
+        text: '削除しますか？',
+        showCancelButton: true,
+        confirmButtonText: 'はい',
+        cancelButtonText: 'いいえ'
+    });
+    if (!isConfirmed) return;
                 
                 try {
                     await axios.delete(\`/api/teacher/content-blocks/\${id}\`);
@@ -5108,7 +5153,15 @@ app.get('/teacher/content', (c) => {
 
             // 問題削除 (UI即時反映)
             async function deleteQuestion(id, btnElement) {
-                if(!confirm('削除しますか？')) return;
+                const { isConfirmed } = await Swal.fire({
+        icon: 'warning',
+        title: '確認',
+        text: '削除しますか？',
+        showCancelButton: true,
+        confirmButtonText: 'はい',
+        cancelButtonText: 'いいえ'
+    });
+    if (!isConfirmed) return;
                 
                 try {
                     await axios.delete(\`/api/teacher/questions/\${id}\`);
@@ -5122,7 +5175,12 @@ app.get('/teacher/content', (c) => {
 
             // 問題追加 (UI即時反映)
             async function addQuestion(type) {
-                const text = prompt('問題文を入力してください');
+                const { value: text } = await Swal.fire({
+        title: '問題文を入力してください',
+        input: 'text',
+        inputValue: '',
+        showCancelButton: true
+    });
                 if(!text) return;
                 
                 const container = document.getElementById('content-blocks-container');
@@ -5527,7 +5585,7 @@ app.get('/teacher/students', (c) => {
                 document.getElementById('generate-code-btn').addEventListener('click', async () => {
                     try {
                         const res = await axios.post('/api/teacher/students', {});
-                        alert('生徒コードを発行しました！\\n\\n生徒コード: ' + res.data.username + '\\n初期パスワード: ' + res.data.password + '\\n\\nこの情報を控えて生徒に伝えてください。');
+                        Swal.fire({ icon: 'info', text: '生徒コードを発行しました！\\n\\n生徒コード: ' + res.data.username + '\\n初期パスワード: ' + res.data.password + '\\n\\nこの情報を控えて生徒に伝えてください。' });
                         loadData();
                     } catch(e) {
                         Swal.fire({ icon: 'error', title: 'エラー', text: '発行に失敗しました' });
@@ -5618,7 +5676,15 @@ app.get('/teacher/students', (c) => {
             };
 
             window.deleteStudent = async (id) => {
-                if(!confirm('本当に削除しますか？この生徒に関連するデータも全て削除されます。')) return;
+                const { isConfirmed } = await Swal.fire({
+        icon: 'warning',
+        title: '確認',
+        text: '本当に削除しますか？この生徒に関連するデータも全て削除されます。',
+        showCancelButton: true,
+        confirmButtonText: 'はい',
+        cancelButtonText: 'いいえ'
+    });
+    if (!isConfirmed) return;
                 try {
                     await axios.delete('/api/teacher/students/' + id);
                     loadData();
@@ -6000,7 +6066,15 @@ app.get('/teacher/glossary', (c) => {
             };
 
             window.deleteTerm = async function(id) {
-                if (!confirm('削除しますか？')) return;
+                const { isConfirmed } = await Swal.fire({
+        icon: 'warning',
+        title: '確認',
+        text: '削除しますか？',
+        showCancelButton: true,
+        confirmButtonText: 'はい',
+        cancelButtonText: 'いいえ'
+    });
+    if (!isConfirmed) return;
                 try {
                     await axios.delete('/api/teacher/glossary/' + id);
                     loadGlossary();
@@ -6146,7 +6220,7 @@ app.get('/teacher/questions', (c) => {
             
             async function sendReply(id) {
                 const text = document.getElementById('reply-' + id).value;
-                if (!text.trim()) return alert('返信内容を入力してください');
+                if (!text.trim()) return Swal.fire({ icon: 'info', text: '返信内容を入力してください' });
                 
                 try {
                     await axios.post('/api/teacher/questions/' + id + '/reply', { reply_text: text });
