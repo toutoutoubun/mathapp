@@ -325,52 +325,7 @@ app.delete('/api/teacher/assignments/:id', async (c) => {
     return c.json({ success: true });
 });
 
-// 教師用プレビューデータ一括取得
-app.get('/api/teacher/preview-content', async (c) => {
-  try {
-    const { DB } = c.env
-    const user = c.get('user')
 
-    // 1. セクション取得
-    const sectionsRes = await DB.prepare('SELECT * FROM sections WHERE teacher_id = ? ORDER BY created_at DESC').bind(user.id).all();
-    const sections = sectionsRes.results;
-
-    // 2. フェーズ取得
-    const phasesRes = await DB.prepare(`
-      SELECT p.* 
-      FROM phases p
-      JOIN sections s ON p.section_id = s.id
-      WHERE s.teacher_id = ?
-      ORDER BY p.order_index
-    `).bind(user.id).all();
-    const phases = phasesRes.results;
-
-    // 3. モジュール取得
-    const modulesRes = await DB.prepare(`
-      SELECT m.* 
-      FROM modules m
-      JOIN phases p ON m.phase_id = p.id
-      JOIN sections s ON p.section_id = s.id
-      WHERE s.teacher_id = ?
-      ORDER BY m.order_index
-    `).bind(user.id).all();
-    const modules = modulesRes.results;
-
-    // 階層構造の構築
-    const content = sections.map((s: any) => {
-      const sPhases = phases.filter((p: any) => p.section_id === s.id).map((p: any) => {
-          const pModules = modules.filter((m: any) => m.phase_id === p.id);
-          return { ...p, modules: pModules };
-      });
-      return { ...s, phases: sPhases };
-    });
-
-    return c.json({ content });
-  } catch(e) {
-    console.error('Preview Content Error:', e);
-    return c.json({ error: 'プレビューデータの取得に失敗しました' }, 500);
-  }
-});
 
 // セクション一覧取得（教師の作成したもののみ）
 app.get('/api/teacher/sections', async (c) => {
@@ -1278,9 +1233,6 @@ app.get('/teacher', (c) => {
                             <i class="fas fa-comments mr-1"></i>質問管理
                             <span id="question-badge" class="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center hidden">0</span>
                         </a>
-                        <a href="/teacher/preview" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-600 transition text-sm">
-                            <i class="fas fa-eye mr-1"></i>生徒プレビュー
-                        </a>
                         <a href="/" class="px-4 py-2 bg-indigo-800 rounded-lg hover:bg-indigo-900 transition text-sm">
                             <i class="fas fa-sign-out-alt mr-1"></i>ログアウト
                         </a>
@@ -1471,124 +1423,6 @@ app.get('/teacher', (c) => {
                 </a>
 
                 <!-- 生徒画面プレビュー -->
-                <a href="/teacher/preview" class="block p-6 bg-gradient-to-br from-green-100 to-green-200 rounded-xl hover:shadow-xl transition transform hover:-translate-y-1">
-                    <div class="text-5xl mb-4">👀</div>
-                    <h3 class="text-xl font-bold text-gray-800 mb-2">生徒画面</h3>
-                    <p class="text-gray-600 text-sm mb-4">
-                        作成したコンテンツを確認
-                    </p>
-                    <div class="flex items-center text-green-600 font-semibold">
-                        プレビュー画面へ
-                        <i class="fas fa-arrow-right ml-2"></i>
-                    </div>
-                </a>
-            </div>
-        </div>
-    </body>
-    </html>
-  `)
-})
-
-// 教師用プレビュー画面
-app.get('/teacher/preview', (c) => {
-  return c.html(`
-    <!DOCTYPE html>
-    <html lang="ja">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>学習アプリ（プレビュー）</title>
-        <script src="https://cdn.tailwindcss.com"></script>
-        <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
-        <link href="/static/style.css" rel="stylesheet">
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    </head>
-    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
-        <!-- ナビゲーションバー -->
-        <nav class="bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-lg">
-            <div class="max-w-7xl mx-auto px-4 py-4">
-                <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold">
-                        <i class="fas fa-eye mr-2"></i>
-                        生徒画面プレビュー
-                    </h1>
-                    <div class="flex gap-4 items-center">
-                        <select id="section-select" class="px-4 py-2 border-2 border-green-400 bg-green-700 rounded-lg focus:ring-2 focus:ring-green-300 focus:outline-none text-white">
-                            <option value="">学年を選択...</option>
-                        </select>
-                        <a href="/teacher" class="px-4 py-2 bg-white text-green-700 font-bold rounded-lg hover:bg-gray-100 transition">
-                            <i class="fas fa-home mr-2"></i>トップ
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </nav>
-
-        <!-- メインコンテンツ -->
-        <div class="max-w-7xl mx-auto px-4 py-8">
-            <div class="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-8 rounded shadow">
-                <p class="font-bold"><i class="fas fa-info-circle mr-2"></i>プレビューモード</p>
-                <p>これは教師用のプレビュー画面です。実際の生徒画面とは一部挙動が異なる場合があります。</p>
-            </div>
-
-            <!-- 利用可能なコンテンツ -->
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <div class="flex justify-between items-center mb-6">
-                    <h3 class="text-2xl font-bold text-gray-800">
-                        <i class="fas fa-book-open mr-2 text-blue-600"></i>
-                        利用可能な学習コンテンツ
-                    </h3>
-                </div>
-                
-                <p class="text-gray-600 mb-6">
-                    作成されたコンテンツがここに表示されます。
-                </p>
-                
-                <div id="modules-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <div class="text-center col-span-full py-8">
-                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <script src="https://cdn.jsdelivr.net/npm/axios@1.6.0/dist/axios.min.js"></script>
-        <script src="/static/app.js"></script>
-        <script>
-            // Auth Token Setup
-            const token = localStorage.getItem('token');
-            if (token) {
-                axios.defaults.headers.common['Authorization'] = 'Bearer ' + token;
-            } else {
-                window.location.href = '/login';
-            }
-
-            document.addEventListener('DOMContentLoaded', async () => {
-                const container = document.getElementById('modules-grid');
-                const sectionSelect = document.getElementById('section-select');
-                
-                try {
-                    // 1. 教師用プレビューデータ一括取得
-                    const sectionsRes = await axios.get('/api/teacher/preview-content');
-                    const sections = sectionsRes.data.content;
-                    
-                    if (sectionSelect) {
-                        sectionSelect.innerHTML = '<option value="">すべての学年</option>' + 
-                            sections.map(s => \`<option value="\${s.id}">\${s.name}</option>\`).join('');
-                        
-                        // フィルタリングイベント
-                        sectionSelect.addEventListener('change', (e) => {
-                            const selectedId = e.target.value;
-                            const cards = document.querySelectorAll('.module-card');
-                            let hasVisible = false;
-                            cards.forEach(card => {
-                                if (!selectedId || card.dataset.sectionId === selectedId) {
-                                    card.style.display = 'block';
-                                    hasVisible = true;
-                                } else {
-                                    card.style.display = 'none';
-                                }
-                            });
                             
                             const emptyMsg = document.getElementById('empty-message');
                             if (emptyMsg) emptyMsg.style.display = hasVisible ? 'none' : 'block';
@@ -1758,12 +1592,56 @@ app.get('/student', (c) => {
                 
                 if (previewToken) {
                     const previewUser = urlParams.get('preview_user');
+                    
+                    // 既存のトークン（教師用）があれば退避
+                    const currentToken = localStorage.getItem('token');
+                    const currentUser = localStorage.getItem('user');
+                    if (currentToken) {
+                        try {
+                            const userObj = JSON.parse(currentUser || '{}');
+                            if (userObj.role === 'teacher') {
+                                localStorage.setItem('original_token', currentToken);
+                                localStorage.setItem('original_user', currentUser);
+                            }
+                        } catch(e) {}
+                    }
+                    
                     localStorage.setItem('token', previewToken);
                     if (previewUser) {
                         try { localStorage.setItem('user', decodeURIComponent(previewUser)); } catch(e){}
                     }
                     window.history.replaceState({}, document.title, window.location.pathname);
                     axios.defaults.headers.common['Authorization'] = 'Bearer ' + previewToken;
+                    
+                    // プレビュー用ヘッダーを表示
+                    const previewHeader = document.createElement('div');
+                    previewHeader.className = 'bg-orange-500 text-white px-4 py-2 flex justify-between items-center shadow-md relative z-50';
+                    previewHeader.innerHTML = \`
+                        <div class="font-bold flex items-center">
+                            <i class="fas fa-eye mr-2"></i>教師用プレビューモード
+                        </div>
+                        <button onclick="exitPreview()" class="bg-white text-orange-600 px-4 py-1 rounded font-bold hover:bg-gray-100 transition text-sm">
+                            <i class="fas fa-times mr-1"></i>プレビュー終了
+                        </button>
+                    \`;
+                    document.body.prepend(previewHeader);
+                    
+                    window.exitPreview = function() {
+                        const originalToken = localStorage.getItem('original_token');
+                        const originalUser = localStorage.getItem('original_user');
+                        
+                        if (originalToken && originalUser) {
+                            localStorage.setItem('token', originalToken);
+                            localStorage.setItem('user', originalUser);
+                            localStorage.removeItem('original_token');
+                            localStorage.removeItem('original_user');
+                            window.location.href = '/teacher/students';
+                        } else {
+                            localStorage.removeItem('token');
+                            localStorage.removeItem('user');
+                            window.location.href = '/login';
+                        }
+                    };
                 } else {
                     const token = localStorage.getItem('token');
                     if (token) {
@@ -1959,8 +1837,8 @@ app.get('/student/modules/:id', async (c) => {
     return c.text('Module not found', 404);
   }
 
-  const homeLink = isPreview ? '/teacher/preview' : '/student';
-  const homeText = isPreview ? 'プレビュー画面に戻る' : 'ホームに戻る';
+  const homeLink = '/student';
+  const homeText = 'ホームに戻る';
 
   return c.html(`
     <!DOCTYPE html>
@@ -2950,7 +2828,6 @@ app.get('/teacher/sections', (c) => {
                         <a href="/teacher" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
                             <i class="fas fa-arrow-left mr-2"></i>トップへ戻る
                         </a>
-                        <a href="/teacher/preview" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-400 transition">
                             <i class="fas fa-eye mr-2"></i>生徒画面
                         </a>
                     </div>
@@ -3203,7 +3080,6 @@ app.get('/teacher/phases', (c) => {
                         <a href="/teacher" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
                             <i class="fas fa-home mr-2"></i>トップ
                         </a>
-                        <a href="/teacher/preview" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-400 transition text-sm">
                             <i class="fas fa-eye mr-1"></i>プレビュー
                         </a>
                     </div>
@@ -3483,7 +3359,6 @@ app.get('/teacher/modules', (c) => {
                         <a href="/teacher" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
                             <i class="fas fa-home mr-2"></i>トップ
                         </a>
-                        <a href="/teacher/preview" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-400 transition text-sm">
                             <i class="fas fa-eye mr-1"></i>プレビュー
                         </a>
                     </div>
@@ -3791,7 +3666,6 @@ app.get('/teacher/steps', (c) => {
                         <a href="/teacher" class="px-4 py-2 bg-purple-500 rounded-lg hover:bg-purple-400 transition">
                             <i class="fas fa-home mr-2"></i>トップ
                         </a>
-                        <a href="/teacher/preview" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-400 transition text-sm">
                             <i class="fas fa-eye mr-1"></i>プレビュー
                         </a>
                     </div>
@@ -4151,7 +4025,6 @@ app.get('/teacher/content', (c) => {
                         <a href="/teacher" class="px-4 py-2 bg-indigo-500 rounded-lg hover:bg-indigo-400 transition">
                             <i class="fas fa-home mr-2"></i>トップ
                         </a>
-                        <a href="/teacher/preview" class="px-4 py-2 bg-green-500 rounded-lg hover:bg-green-400 transition text-sm">
                             <i class="fas fa-eye mr-1"></i>プレビュー
                         </a>
                     </div>
