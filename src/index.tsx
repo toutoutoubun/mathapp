@@ -545,11 +545,15 @@ app.get('/api/student/questions', async (c) => {
 // 進捗状況取得
 app.get('/api/progress', async (c) => {
   const { DB } = c.env
-  const userId = 'default_user'
+  const user = c.get('user')
+  
+  if (!user) {
+      return c.json({ progress: [] })
+  }
   
   const result = await DB.prepare(
     'SELECT * FROM user_progress WHERE user_id = ? ORDER BY updated_at DESC'
-  ).bind(userId).all()
+  ).bind(user.id).all()
   
   return c.json({ progress: result.results })
 })
@@ -557,15 +561,20 @@ app.get('/api/progress', async (c) => {
 // 進捗状況更新
 app.post('/api/progress', async (c) => {
   const { DB } = c.env
+  const user = c.get('user')
+  
+  if (!user) {
+      return c.json({ error: 'Unauthorized' }, 401)
+  }
+
   const { module_id, step_id, status } = await c.req.json()
-  const userId = 'default_user'
   
   await DB.prepare(`
     INSERT INTO user_progress (user_id, module_id, step_id, status, updated_at)
     VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
     ON CONFLICT(user_id, module_id, step_id) 
     DO UPDATE SET status = ?, updated_at = CURRENT_TIMESTAMP
-  `).bind(userId, module_id, step_id, status, status).run()
+  `).bind(user.id, module_id, step_id, status, status).run()
   
   return c.json({ success: true })
 })
@@ -2137,9 +2146,17 @@ app.get('/student/modules/:id', async (c) => {
                 document.getElementById('next-btn').innerHTML = index === steps.length - 1 ? '完了 <i class="fas fa-check ml-2"></i>' : '次へ <i class="fas fa-arrow-right ml-2"></i>';
                 
                 document.getElementById('prev-btn').onclick = () => loadStepContent(index - 1);
-                document.getElementById('next-btn').onclick = () => {
+                document.getElementById('next-btn').onclick = async () => {
+                    try {
+                        await axios.post('/api/progress', {
+                            module_id: MODULE_ID,
+                            step_id: step.id,
+                            status: 'completed'
+                        });
+                    } catch(e) { console.error(e); }
+
                     if (index < steps.length - 1) loadStepContent(index + 1);
-                    else { Swal.fire({ icon: 'info', text: 'モジュール完了！' }); window.location.href = '/student'; }
+                    else { Swal.fire({ icon: 'success', title: 'モジュール完了！' }); window.location.href = '/student'; }
                 };
 
                 const contentArea = document.getElementById('content-area');
