@@ -1792,6 +1792,7 @@ app.get('/student/modules/:id', async (c) => {
         <script src="https://unpkg.com/function-plot/dist/function-plot.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
         <script src="https://cdn.jsdelivr.net/npm/dayjs@1.11.10/dayjs.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
         <script>
           window.MathJax = {
             tex: { inlineMath: [['$', '$'], ['\\\\(', '\\\\)']] }
@@ -1859,6 +1860,7 @@ app.get('/student/modules/:id', async (c) => {
             const MODULE_ID = ${moduleId};
             const IS_PREVIEW = ${isPreview ? 'true' : 'false'};
             let steps = [];
+            let currentQuestions = [];
             let currentStepIndex = 0;
             let currentStep = null;
             let cachedUser = null;
@@ -2156,6 +2158,7 @@ app.get('/student/modules/:id', async (c) => {
             }
 
             function renderContent(step, blocks, questions) {
+                currentQuestions = questions;
                 const container = document.getElementById('content-area');
                 let html = \`
                     <h2 class="text-3xl font-bold text-gray-800 mb-2">\${step.title}</h2>
@@ -2208,6 +2211,21 @@ app.get('/student/modules/:id', async (c) => {
                                 <button onclick="checkShortAnswer('input-\${q.id}', '\${correct}')" class="bg-indigo-600 text-white px-6 rounded-lg font-bold hover:bg-indigo-700">回答</button>
                             </div>
                         \`;
+                    } else if (q.question_type === 'ordering') {
+                        const shuffledOptions = [...(q.options || [])].sort(() => Math.random() - 0.5);
+                        html += \`
+                            <div id="sortable-q-\${q.id}" class="space-y-2 mb-4">
+                                \${shuffledOptions.map(opt => \`
+                                    <div class="p-3 bg-white border border-indigo-200 rounded-lg cursor-move flex items-center gap-3 shadow-sm hover:bg-indigo-50 transition" data-id="\${opt.id}">
+                                        <i class="fas fa-grip-vertical text-indigo-300"></i>
+                                        <span class="text-indigo-900 font-medium">\${opt.option_text}</span>
+                                    </div>
+                                \`).join('')}
+                            </div>
+                            <button onclick="checkOrdering(\${q.id})" class="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700 transition w-full md:w-auto shadow">
+                                <i class="fas fa-check-circle mr-2"></i>回答する
+                            </button>
+                        \`;
                     }
 
                     html += '</div>';
@@ -2217,6 +2235,15 @@ app.get('/student/modules/:id', async (c) => {
                 container.innerHTML = html;
 
                 setTimeout(() => {
+                    questions.forEach(q => {
+                        if(q.question_type === 'ordering') {
+                            const el = document.getElementById('sortable-q-' + q.id);
+                            if(el && typeof Sortable !== 'undefined') {
+                                new Sortable(el, { animation: 150 });
+                            }
+                        }
+                    });
+
                     blocks.forEach(b => {
                         if(b.block_type === 'graph') {
                             const data = [{ fn: b.content.fn, color: '#4f46e5' }];
@@ -2357,6 +2384,27 @@ app.get('/student/modules/:id', async (c) => {
                 } else {
                     input.classList.add('border-red-500', 'bg-red-50');
                     Swal.fire({ icon: 'info', text: '不正解...' });
+                }
+            };
+
+            window.checkOrdering = function(questionId) {
+                const question = currentQuestions.find(q => q.id === questionId);
+                if (!question) return;
+                
+                // 正解の順序
+                const correctOrder = [...question.options].sort((a, b) => a.order_index - b.order_index).map(o => String(o.id));
+                
+                // ユーザーの回答順序
+                const el = document.getElementById('sortable-q-' + questionId);
+                const userOrder = Array.from(el.children).map(c => c.dataset.id);
+                
+                // 比較
+                const isCorrect = JSON.stringify(correctOrder) === JSON.stringify(userOrder);
+                
+                if (isCorrect) {
+                    Swal.fire({ icon: 'success', title: '正解！', text: '正しい順序です' });
+                } else {
+                    Swal.fire({ icon: 'error', title: '不正解...', text: 'もう一度挑戦してみましょう' });
                 }
             };
         </script>
@@ -3974,6 +4022,7 @@ app.get('/teacher/content', (c) => {
         <script src="https://unpkg.com/function-plot/dist/function-plot.js"></script>
         <!-- MathJax -->
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
         <script>
           window.MathJax = {
             tex: { inlineMath: [['$', '$'], ['\\\\(', '\\\\)']] }
@@ -4147,6 +4196,16 @@ app.get('/teacher/content', (c) => {
                                     <div class="text-left">
                                         <div class="font-bold text-gray-800">数値入力問題</div>
                                         <div class="text-xs text-gray-500">数値や数式を入力</div>
+                                    </div>
+                                </button>
+
+                                <button onclick="addQuestion('ordering')" class="flex items-center p-3 bg-gray-50 hover:bg-purple-50 border border-gray-200 rounded-lg transition group">
+                                    <div class="w-10 h-10 bg-purple-100 text-purple-600 rounded-full flex items-center justify-center mr-3 group-hover:bg-purple-600 group-hover:text-white transition">
+                                        <i class="fas fa-sort"></i>
+                                    </div>
+                                    <div class="text-left">
+                                        <div class="font-bold text-gray-800">並べ替え問題</div>
+                                        <div class="text-xs text-gray-500">正しい順序に並べ替え</div>
                                     </div>
                                 </button>
                             </div>
@@ -4608,11 +4667,28 @@ app.get('/teacher/content', (c) => {
                 } else {
                     // 問題ブロック
                     const q = item;
-                    const isMultipleChoice = q.question_type === 'multiple_choice';
-                    const typeLabel = isMultipleChoice ? '選択式問題' : '数値入力問題';
-                    const bgColor = isMultipleChoice ? 'bg-yellow-50 border-yellow-200' : 'bg-orange-50 border-orange-200';
-                    const textColor = isMultipleChoice ? 'text-yellow-700' : 'text-orange-700';
-                    const icon = isMultipleChoice ? 'fa-list-ul' : 'fa-keyboard';
+                    const type = q.question_type;
+                    let typeLabel = '';
+                    let bgColor = '';
+                    let textColor = '';
+                    let icon = '';
+
+                    if (type === 'multiple_choice') {
+                        typeLabel = '選択式問題';
+                        bgColor = 'bg-yellow-50 border-yellow-200';
+                        textColor = 'text-yellow-700';
+                        icon = 'fa-list-ul';
+                    } else if (type === 'ordering') {
+                        typeLabel = '並べ替え問題';
+                        bgColor = 'bg-purple-50 border-purple-200';
+                        textColor = 'text-purple-700';
+                        icon = 'fa-sort';
+                    } else {
+                        typeLabel = '数値入力問題';
+                        bgColor = 'bg-orange-50 border-orange-200';
+                        textColor = 'text-orange-700';
+                        icon = 'fa-keyboard';
+                    }
 
                     div.className = \`content-block \${bgColor} border rounded-xl p-4 shadow-sm relative group mb-4\`;
                     
@@ -4623,7 +4699,7 @@ app.get('/teacher/content', (c) => {
                         </div>
                     \`;
 
-                    if (isMultipleChoice) {
+                    if (type === 'multiple_choice') {
                         editorHtml += \`
                             <div class="space-y-2 mb-4" id="options-container-\${q.id}">
                                 <label class="text-xs font-bold text-gray-500 mb-1 block">選択肢</label>
@@ -4633,6 +4709,45 @@ app.get('/teacher/content', (c) => {
                                 </button>
                             </div>
                         \`;
+                    } else if (type === 'ordering') {
+                        editorHtml += \`
+                            <div class="space-y-2 mb-4" id="options-container-\${q.id}">
+                                <label class="text-xs font-bold text-gray-500 mb-1 block">並べ替えアイテム (正解の順序)</label>
+                                <div id="sortable-list-\${q.id}" class="space-y-2">
+                                    \${(q.options || []).sort((a,b) => a.order_index - b.order_index).map(opt => \`
+                                        <div class="flex items-center gap-2 bg-white p-2 rounded border cursor-move" id="option-\${opt.id}" data-id="\${opt.id}">
+                                            <i class="fas fa-grip-vertical text-gray-400 mr-2"></i>
+                                            <input type="text" value="\${opt.option_text}" 
+                                                   onchange="updateOption(\${opt.id}, {option_text: this.value})"
+                                                   class="flex-1 p-2 border rounded text-sm" placeholder="アイテムを入力">
+                                            <button onclick="deleteOption(\${opt.id})" class="text-red-400 hover:text-red-600 p-1">
+                                                <i class="fas fa-times"></i>
+                                            </button>
+                                        </div>
+                                    \`).join('')}
+                                </div>
+                                <button onclick="addOption(\${q.id})" class="text-sm text-blue-600 hover:underline flex items-center mt-2">
+                                    <i class="fas fa-plus mr-1"></i>アイテムを追加
+                                </button>
+                            </div>
+                        \`;
+                        
+                        setTimeout(() => {
+                            const el = document.getElementById('sortable-list-' + q.id);
+                            if(el && typeof Sortable !== 'undefined') {
+                                new Sortable(el, {
+                                    handle: '.fa-grip-vertical',
+                                    animation: 150,
+                                    onEnd: async function(evt) {
+                                        const items = el.querySelectorAll('[data-id]');
+                                        for (let i = 0; i < items.length; i++) {
+                                            const id = items[i].dataset.id;
+                                            await updateOption(id, { order_index: i });
+                                        }
+                                    }
+                                });
+                            }
+                        }, 100);
                     } else {
                         const correctOption = (q.options || []).find(o => o.is_correct) || { option_text: '' };
                         const correctId = correctOption.id || null;
@@ -5151,6 +5266,15 @@ app.get('/teacher/content', (c) => {
                         loadContent(currentStepId, document.getElementById('current-step-title').textContent);
                         return; 
                     }
+
+                    if (type === 'ordering') {
+                        await axios.post('/api/teacher/question-options', { question_id: newItem.id, option_text: '項目1', is_correct: 0, order_index: 0 });
+                        await axios.post('/api/teacher/question-options', { question_id: newItem.id, option_text: '項目2', is_correct: 0, order_index: 1 });
+                        await axios.post('/api/teacher/question-options', { question_id: newItem.id, option_text: '項目3', is_correct: 0, order_index: 2 });
+                        
+                        loadContent(currentStepId, document.getElementById('current-step-title').textContent);
+                        return; 
+                    }
                     
                     allItems.push(newItem);
                     container.appendChild(createItemElement(newItem));
@@ -5301,7 +5425,27 @@ app.get('/teacher/content', (c) => {
                         }
                     } else {
                         const q = item;
-                        if (q.question_type === 'multiple_choice') {
+                        if (q.question_type === 'ordering') {
+                            // シャッフルして表示
+                            const shuffledOptions = [...(q.options || [])].sort(() => Math.random() - 0.5);
+                            html += \`
+                                <div class="bg-white p-6 rounded-xl shadow-lg border-l-4 border-purple-500">
+                                    <h4 class="font-bold text-lg mb-4 text-purple-900">並べ替え問題</h4>
+                                    <p class="mb-4">\${q.question_text}</p>
+                                    <div id="preview-sortable-\${q.id}" class="space-y-2">
+                                        \${shuffledOptions.map(opt => \`
+                                            <div class="p-3 bg-gray-50 border rounded cursor-move flex items-center gap-3" data-id="\${opt.id}">
+                                                <i class="fas fa-grip-vertical text-gray-400"></i>
+                                                <span>\${opt.option_text}</span>
+                                            </div>
+                                        \`).join('')}
+                                    </div>
+                                    <button onclick="checkOrdering(\${q.id})" class="mt-4 bg-purple-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-purple-700 transition">
+                                        回答する
+                                    </button>
+                                </div>
+                            \`;
+                        } else if (q.question_type === 'multiple_choice') {
                             html += \`
                                 <div class="bg-white p-6 rounded-xl shadow-lg border-l-4 border-yellow-500">
                                     <h4 class="font-bold text-lg mb-4 text-yellow-900">問題</h4>
@@ -5338,6 +5482,16 @@ app.get('/teacher/content', (c) => {
 
                 // グラフ描画 (DOM描画後に実行)
                 setTimeout(() => {
+                    // SortableJS適用
+                    allItems.forEach(item => {
+                        if(item.type === 'question' && item.question_type === 'ordering') {
+                            const el = document.getElementById('preview-sortable-' + item.id);
+                            if(el && typeof Sortable !== 'undefined') {
+                                new Sortable(el, { animation: 150 });
+                            }
+                        }
+                    });
+
                     allItems.forEach((item, idx) => {
                         if(item.type === 'block' && item.block_type === 'graph') {
                             try {
@@ -5377,6 +5531,27 @@ app.get('/teacher/content', (c) => {
                     });
                 }, 300); // 描画タイミングを少し遅らせる
             }
+
+            window.checkOrdering = function(questionId) {
+                const question = allItems.find(i => i.id === questionId && i.type === 'question');
+                if (!question) return;
+                
+                // 正解の順序 (order_index昇順)
+                const correctOrder = [...question.options].sort((a, b) => a.order_index - b.order_index).map(o => String(o.id));
+                
+                // ユーザーの回答順序
+                const el = document.getElementById('preview-sortable-' + questionId);
+                const userOrder = Array.from(el.children).map(c => c.dataset.id);
+                
+                // 比較
+                const isCorrect = JSON.stringify(correctOrder) === JSON.stringify(userOrder);
+                
+                if (isCorrect) {
+                    Swal.fire({ icon: 'success', title: '正解！', text: '正しい順序です' });
+                } else {
+                    Swal.fire({ icon: 'error', title: '不正解...', text: 'もう一度挑戦してみましょう' });
+                }
+            };
 
             function closePreview() {
                 document.getElementById('preview-modal').classList.add('hidden');
