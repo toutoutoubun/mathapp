@@ -1422,68 +1422,6 @@ app.get('/teacher', (c) => {
                     </div>
                 </a>
 
-                <!-- 生徒画面プレビュー -->
-                            
-                            const emptyMsg = document.getElementById('empty-message');
-                            if (emptyMsg) emptyMsg.style.display = hasVisible ? 'none' : 'block';
-                        });
-                    }
-                    
-                    // 2. コンテンツ一覧表示
-                    let hasContent = false;
-                    const cardsHtml = [];
-
-                    sections.forEach(section => {
-                        if (section.phases && section.phases.length > 0) {
-                            section.phases.forEach(phase => {
-                                if (phase.modules && phase.modules.length > 0) {
-                                    phase.modules.forEach(module => {
-                                hasContent = true;
-                                const colorClass = module.color ? \`from-\${module.color}-100 to-\${module.color}-200\` : 'from-indigo-100 to-purple-200';
-                                
-                                cardsHtml.push(\`
-                                    <a href="/student/modules/\${module.id}?preview=true" 
-                                       class="module-card block p-6 bg-gradient-to-br \${colorClass} rounded-lg hover:shadow-xl transition transform hover:-translate-y-1"
-                                       data-section-id="\${section.id}">
-                                        <div class="text-4xl mb-4">\${module.icon || '📝'}</div>
-                                        <h4 class="text-xl font-bold text-gray-800 mb-2">\${module.name}</h4>
-                                        <p class="text-gray-600 text-xs font-bold uppercase tracking-wide opacity-70 mb-2">
-                                            \${section.name} &gt; \${phase.name}
-                                        </p>
-                                        <p class="text-gray-600 text-sm line-clamp-2">
-                                            \${module.description || '説明なし'}
-                                        </p>
-                                        <div class="mt-4 text-sm font-semibold opacity-80">
-                                            プレビューする →
-                                        </div>
-                                    </a>
-                                \`);
-                                    });
-                                }
-                            });
-                        }
-                    });
-                    
-                    if (!hasContent) {
-                        container.innerHTML = \`
-                            <div class="col-span-full text-center py-12 bg-gray-50 rounded-xl">
-                                <p class="text-gray-500">まだコンテンツがありません。</p>
-                            </div>
-                        \`;
-                    } else {
-                        container.innerHTML = cardsHtml.join('') + \`
-                            <div id="empty-message" class="col-span-full text-center py-12 bg-gray-50 rounded-xl" style="display: none;">
-                                <p class="text-gray-500">この学年にはコンテンツがありません。</p>
-                            </div>
-                        \`;
-                    }
-
-                } catch (e) {
-                    console.error(e);
-                    container.innerHTML = '<p class="text-red-500 col-span-full text-center">コンテンツの読み込みに失敗しました。</p>';
-                }
-            });
-        </script>
     </body>
     </html>
   `)
