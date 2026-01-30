@@ -5737,7 +5737,7 @@ app.get('/teacher/students', (c) => {
                         loadData();
                     } catch(e) {
                         const msg = e.response?.data?.error || '追加に失敗しました';
-                        alert(msg);
+                        Swal.fire({ icon: 'info', title: '通知', text: msg });
                     }
                 });
             });
