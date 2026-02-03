@@ -3196,9 +3196,40 @@ app.delete('/api/teacher/modules/:id', async (c) => {
   const { DB } = c.env
   const id = c.req.param('id')
   
-  await DB.prepare('DELETE FROM modules WHERE id = ?').bind(id).run()
-  
-  return c.json({ success: true })
+  try {
+    // まずモジュールに含まれるステップIDを取得
+    const stepsResult = await DB.prepare('SELECT id FROM steps WHERE module_id = ?').bind(id).all()
+    const stepIds = stepsResult.results.map((s: any) => s.id)
+    
+    // 各ステップに関連するデータを削除
+    for (const stepId of stepIds) {
+      // コンテンツブロックを削除
+      await DB.prepare('DELETE FROM content_blocks WHERE step_id = ?').bind(stepId).run()
+      
+      // 問題を削除
+      await DB.prepare('DELETE FROM questions WHERE step_id = ?').bind(stepId).run()
+      
+      // 進捗データを削除
+      await DB.prepare('DELETE FROM user_progress WHERE step_id = ?').bind(stepId).run()
+      
+      // 質問データを削除
+      await DB.prepare('DELETE FROM student_questions WHERE step_id = ?').bind(stepId).run()
+    }
+    
+    // ステップを削除
+    await DB.prepare('DELETE FROM steps WHERE module_id = ?').bind(id).run()
+    
+    // モジュールレベルの質問を削除
+    await DB.prepare('DELETE FROM student_questions WHERE module_id = ?').bind(id).run()
+    
+    // モジュールを削除
+    await DB.prepare('DELETE FROM modules WHERE id = ?').bind(id).run()
+    
+    return c.json({ success: true })
+  } catch (e) {
+    console.error('Module Delete Error:', e)
+    return c.json({ error: 'Failed to delete module' }, 500)
+  }
 })
 
 // ステップ一覧取得
@@ -4273,6 +4304,9 @@ app.get('/teacher/modules', (c) => {
                       <a href="/teacher/steps?module_id=\${module.id}" class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition text-sm">
                         <i class="fas fa-tasks mr-1"></i>ステップ管理
                       </a>
+                      <button onclick="editModule(\${module.id}, '\${module.name.replace(/'/g, "\\'")}', '\${(module.description || '').replace(/'/g, "\\'")}', '\${module.icon || ''}', '\${module.color || 'blue'}', \${module.order_index})" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition text-sm">
+                        <i class="fas fa-edit mr-1"></i>編集
+                      </button>
                       <button onclick="deleteModule(\${module.id})" class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition text-sm">
                         <i class="fas fa-trash mr-1"></i>削除
                       </button>
@@ -4342,20 +4376,121 @@ app.get('/teacher/modules', (c) => {
             }
           });
           
+          // モジュール編集
+          async function editModule(id, name, description, icon, color, order_index) {
+            const { value: formValues, isConfirmed } = await Swal.fire({
+              title: 'モジュールを編集',
+              html: \`
+                <div class="space-y-4 text-left">
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">モジュール名 *</label>
+                    <input id="edit-name" type="text" value="\${name}" 
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">説明</label>
+                    <textarea id="edit-description" rows="2" 
+                              class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">\${description}</textarea>
+                  </div>
+                  <div class="grid grid-cols-2 gap-4">
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-2">アイコン</label>
+                      <input id="edit-icon" type="text" value="\${icon}" 
+                             class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                      <label class="block text-sm font-medium text-gray-700 mb-2">カラー</label>
+                      <select id="edit-color" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="blue" \${color === 'blue' ? 'selected' : ''}>青</option>
+                        <option value="green" \${color === 'green' ? 'selected' : ''}>緑</option>
+                        <option value="yellow" \${color === 'yellow' ? 'selected' : ''}>黄</option>
+                        <option value="purple" \${color === 'purple' ? 'selected' : ''}>紫</option>
+                        <option value="pink" \${color === 'pink' ? 'selected' : ''}>ピンク</option>
+                        <option value="orange" \${color === 'orange' ? 'selected' : ''}>オレンジ</option>
+                        <option value="red" \${color === 'red' ? 'selected' : ''}>赤</option>
+                        <option value="indigo" \${color === 'indigo' ? 'selected' : ''}>インディゴ</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">表示順序</label>
+                    <input id="edit-order" type="number" value="\${order_index}" min="0"
+                           class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                  </div>
+                </div>
+              \`,
+              showCancelButton: true,
+              confirmButtonText: '更新',
+              cancelButtonText: 'キャンセル',
+              width: '600px',
+              preConfirm: () => {
+                const name = document.getElementById('edit-name').value;
+                if (!name) {
+                  Swal.showValidationMessage('モジュール名は必須です');
+                  return false;
+                }
+                return {
+                  name: name,
+                  description: document.getElementById('edit-description').value,
+                  icon: document.getElementById('edit-icon').value,
+                  color: document.getElementById('edit-color').value,
+                  order_index: parseInt(document.getElementById('edit-order').value)
+                };
+              }
+            });
+            
+            if (isConfirmed && formValues) {
+              try {
+                await axios.put('/api/teacher/modules/' + id, formValues);
+                Swal.fire({ icon: 'success', title: '更新完了', text: 'モジュールを更新しました！' });
+                
+                // 現在のフェーズIDを取得して再読み込み
+                let phaseId = document.getElementById('phase-select').value;
+                if (!phaseId) {
+                  phaseId = urlParams.get('phase_id');
+                }
+                if (phaseId) {
+                  loadModules(phaseId);
+                }
+              } catch (error) {
+                console.error('モジュール更新エラー:', error);
+                Swal.fire({ icon: 'error', title: 'エラー', text: 'エラーが発生しました' });
+              }
+            }
+          }
+          
           // モジュール削除
           async function deleteModule(id) {
             const { isConfirmed } = await Swal.fire({
-        icon: 'warning',
-        title: '確認',
-        text: '本当にこのモジュールを削除しますか？',
-        showCancelButton: true,
-        confirmButtonText: 'はい',
-        cancelButtonText: 'いいえ'
-    });
-    if (!isConfirmed) {
+              icon: 'warning',
+              title: '確認',
+              text: '本当にこのモジュールを削除しますか？関連するステップ、コンテンツ、問題も全て削除されます。',
+              showCancelButton: true,
+              confirmButtonText: '削除する',
+              cancelButtonText: 'キャンセル',
+              confirmButtonColor: '#dc2626'
+            });
+            
+            if (!isConfirmed) {
               return;
             }
-            Swal.fire({ icon: 'info', text: '削除機能は今後実装予定です（ID: ' + id + '）' });
+            
+            try {
+              await axios.delete('/api/teacher/modules/' + id);
+              Swal.fire({ icon: 'success', title: '削除完了', text: 'モジュールを削除しました' });
+              
+              // 現在のフェーズIDを取得して再読み込み
+              let phaseId = document.getElementById('phase-select').value;
+              if (!phaseId) {
+                phaseId = urlParams.get('phase_id');
+              }
+              if (phaseId) {
+                loadModules(phaseId);
+              }
+            } catch (error) {
+              console.error('モジュール削除エラー:', error);
+              Swal.fire({ icon: 'error', title: 'エラー', text: 'エラーが発生しました' });
+            }
           }
           
           // 初期化
