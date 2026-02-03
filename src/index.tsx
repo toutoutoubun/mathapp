@@ -708,15 +708,53 @@ app.post('/api/progress', async (c) => {
 // 解答履歴保存
 app.post('/api/answer', async (c) => {
   const { DB } = c.env
+  const user = c.get('user')
+  
+  if (!user) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+  
   const { module_id, step_id, question_id, answer, is_correct, explanation } = await c.req.json()
-  const userId = 'default_user'
   
   await DB.prepare(`
     INSERT INTO answer_history (user_id, module_id, step_id, question_id, answer, is_correct, explanation)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).bind(userId, module_id, step_id, question_id, answer, is_correct ? 1 : 0, explanation).run()
+  `).bind(user.id, module_id, step_id, question_id, answer, is_correct ? 1 : 0, explanation).run()
   
   return c.json({ success: true })
+})
+
+// モジュールの解答履歴取得（正解した問題IDのリスト）
+app.get('/api/answer-history', async (c) => {
+  const { DB } = c.env
+  const user = c.get('user')
+  
+  if (!user) {
+    return c.json({ error: 'Unauthorized' }, 401)
+  }
+  
+  const module_id = c.req.query('module_id')
+  
+  if (!module_id) {
+    return c.json({ error: 'module_id is required' }, 400)
+  }
+  
+  // 正解した問題IDを取得（最新の解答のみ）
+  const result = await DB.prepare(`
+    SELECT DISTINCT question_id
+    FROM answer_history
+    WHERE user_id = ? AND module_id = ? AND is_correct = 1
+    AND id IN (
+      SELECT MAX(id)
+      FROM answer_history
+      WHERE user_id = ? AND module_id = ?
+      GROUP BY question_id
+    )
+  `).bind(user.id, module_id, user.id, module_id).all()
+  
+  const answeredQuestionIds = result.results.map(r => r.question_id)
+  
+  return c.json({ answeredQuestionIds })
 })
 
 // 達成ログ追加
@@ -1027,6 +1065,48 @@ app.get('/api/student/phase-progress', async (c) => {
   });
 
   return c.json({ progress: phaseProgress })
+})
+
+// モジュールごとの完了状態取得
+app.get('/api/student/module-completion', async (c) => {
+  const { DB } = c.env
+  const user = c.get('user')
+  
+  if (!user) {
+    return c.json({ modules: [] })
+  }
+
+  // 各モジュールのステップ総数と完了数を取得
+  const result = await DB.prepare(`
+    SELECT 
+      m.id as module_id,
+      m.name as module_name,
+      COUNT(DISTINCT s.id) as total_steps,
+      COUNT(DISTINCT CASE WHEN up.status = 'completed' THEN up.step_id END) as completed_steps
+    FROM modules m
+    LEFT JOIN steps s ON m.id = s.module_id
+    LEFT JOIN user_progress up ON s.id = CAST(up.step_id AS INTEGER) AND up.user_id = ?
+    WHERE m.phase_id IN (
+      SELECT p.id FROM phases p
+      JOIN sections sec ON p.section_id = sec.id
+      JOIN assignments a ON sec.id = a.section_id
+      WHERE a.student_id = ?
+    )
+    GROUP BY m.id
+  `).bind(user.id, user.id).all()
+
+  const modules = result.results.map((m: any) => {
+    const isCompleted = m.total_steps > 0 && m.completed_steps === m.total_steps;
+    return {
+      module_id: m.module_id,
+      module_name: m.module_name,
+      total_steps: m.total_steps,
+      completed_steps: m.completed_steps,
+      is_completed: isCompleted
+    };
+  });
+
+  return c.json({ modules })
 })
 
 // ==================== Q&A API Routes ====================
@@ -1896,6 +1976,10 @@ app.get('/student', (c) => {
                     const progressRes = await axios.get('/api/student/phase-progress');
                     const progressMap = new Map(progressRes.data.progress.map(p => [p.phase_id, p]));
                     
+                    // 4.5 モジュール完了状態取得
+                    const moduleCompletionRes = await axios.get('/api/student/module-completion');
+                    const moduleCompletionMap = new Map(moduleCompletionRes.data.modules.map(m => [m.module_id, m]));
+                    
                     // 5. モジュール別表示のレンダリング
                     const renderModules = (filterSectionId = '') => {
                         const sectionsToDisplay = filterSectionId 
@@ -1928,20 +2012,22 @@ app.get('/student', (c) => {
                                 const percentage = progress ? progress.percentage : 0;
                                 const completedSteps = progress ? progress.completed_steps : 0;
                                 const totalSteps = progress ? progress.total_steps : 0;
+                                const isPhaseCompleted = percentage === 100;
                                 
                                 html += \`
                                     <div class="border rounded-lg p-4 hover:border-gray-400 transition">
                                         <div class="flex justify-between items-start mb-3">
-                                            <div>
+                                            <div class="flex items-center gap-2">
                                                 <h4 class="font-bold text-gray-800">\${phase.name}</h4>
-                                                <p class="text-sm text-gray-600 mt-1">\${phase.description || ''}</p>
+                                                \${isPhaseCompleted ? '<span class="text-green-600"><i class="fas fa-check-circle"></i></span>' : ''}
                                             </div>
                                             <span class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">\${percentage}%</span>
                                         </div>
+                                        <p class="text-sm text-gray-600 mb-3">\${phase.description || ''}</p>
                                         
                                         <!-- 進捗バー -->
                                         <div class="w-full bg-gray-200 rounded-full h-1.5 mb-3">
-                                            <div class="bg-gray-600 h-1.5 rounded-full" style="width: \${percentage}%"></div>
+                                            <div class="bg-\${isPhaseCompleted ? 'green' : 'gray'}-600 h-1.5 rounded-full" style="width: \${percentage}%"></div>
                                         </div>
                                         
                                         <!-- モジュール一覧 -->
@@ -1949,20 +2035,36 @@ app.get('/student', (c) => {
                                 \`;
                                 
                                 phase.modules.forEach(module => {
+                                    const moduleCompletion = moduleCompletionMap.get(module.id);
+                                    const isModuleCompleted = moduleCompletion ? moduleCompletion.is_completed : false;
+                                    
                                     html += \`
-                                        <a href="/student/modules/\${module.id}" 
-                                           class="block p-3 bg-gray-50 rounded hover:bg-gray-100 transition border border-gray-200">
-                                            <div class="flex items-center justify-between">
-                                                <div class="flex items-center gap-3">
+                                        <div class="p-3 bg-gray-50 rounded border border-gray-200">
+                                            <div class="flex items-center justify-between mb-2">
+                                                <a href="/student/modules/\${module.id}" 
+                                                   class="flex items-center gap-3 flex-1 hover:text-indigo-600 transition">
                                                     <span class="text-2xl">\${module.icon || '📝'}</span>
                                                     <div>
-                                                        <div class="font-medium text-gray-800">\${module.name}</div>
+                                                        <div class="font-medium text-gray-800 flex items-center gap-2">
+                                                            \${module.name}
+                                                            \${isModuleCompleted ? '<span class="text-green-600 text-sm"><i class="fas fa-check-circle"></i> 完了</span>' : ''}
+                                                        </div>
                                                         <div class="text-xs text-gray-500">\${module.description || ''}</div>
                                                     </div>
+                                                </a>
+                                                <div class="flex items-center gap-2">
+                                                    \${isModuleCompleted ? \`
+                                                        <a href="/student/modules/\${module.id}?review=true" 
+                                                           class="px-3 py-1 text-xs bg-indigo-100 text-indigo-700 rounded hover:bg-indigo-200 transition whitespace-nowrap">
+                                                            <i class="fas fa-redo-alt mr-1"></i>復習
+                                                        </a>
+                                                    \` : ''}
+                                                    <a href="/student/modules/\${module.id}" class="text-gray-400 hover:text-gray-600">
+                                                        <i class="fas fa-chevron-right"></i>
+                                                    </a>
                                                 </div>
-                                                <i class="fas fa-chevron-right text-gray-400"></i>
                                             </div>
-                                        </a>
+                                        </div>
                                     \`;
                                 });
                                 
@@ -2526,6 +2628,26 @@ app.get('/student/modules/:id', async (c) => {
                         return;
                     }
 
+                    // 解答履歴を読み込み
+                    try {
+                        const historyRes = await axios.get('/api/answer-history?module_id=' + MODULE_ID);
+                        const answeredIds = historyRes.data.answeredQuestionIds || [];
+                        answeredQuestions = new Set(answeredIds);
+                    } catch (e) {
+                        console.error('解答履歴の読み込みに失敗:', e);
+                    }
+
+                    // モジュール内の全問題を取得
+                    try {
+                        const questionsPromises = steps.map(step => 
+                            axios.get('/api/student/questions?step_id=' + step.id)
+                        );
+                        const questionsResults = await Promise.all(questionsPromises);
+                        allModuleQuestions = questionsResults.flatMap(res => res.data.questions);
+                    } catch (e) {
+                        console.error('問題の読み込みに失敗:', e);
+                    }
+
                     renderStepNav();
                     loadStepContent(0);
                 } catch (e) {
@@ -2546,12 +2668,13 @@ app.get('/student/modules/:id', async (c) => {
             }
 
             let answeredQuestions = new Set();
+            let allModuleQuestions = []; // モジュール内の全問題
 
             async function loadStepContent(index) {
                 currentStepIndex = index;
                 const step = steps[index];
                 currentStep = step || null;
-                answeredQuestions.clear();
+                // answeredQuestions.clear()を削除 - モジュール全体で解答状況を保持
                 
                 document.querySelectorAll('.step-btn').forEach(btn => {
                     if (parseInt(btn.dataset.index) === index) {
@@ -2566,7 +2689,7 @@ app.get('/student/modules/:id', async (c) => {
                 
                 document.getElementById('prev-btn').onclick = () => loadStepContent(index - 1);
                 document.getElementById('next-btn').onclick = async () => {
-                    // 全問正解チェック
+                    // 現在のステップの問題チェック
                     if (currentQuestions && currentQuestions.length > 0) {
                         const unanswered = currentQuestions.filter(q => !answeredQuestions.has(q.id));
                         if (unanswered.length > 0) {
@@ -2574,6 +2697,23 @@ app.get('/student/modules/:id', async (c) => {
                                 icon: 'warning',
                                 title: '未回答の問題があります',
                                 text: 'すべての問題に正解してから次に進んでください。'
+                            });
+                            return;
+                        }
+                    }
+
+                    // 最後のステップの場合、モジュール全体の問題をチェック
+                    if (index === steps.length - 1) {
+                        const allQuestionIds = allModuleQuestions.map(q => q.id);
+                        const unansweredModuleQuestions = allQuestionIds.filter(id => !answeredQuestions.has(id));
+                        
+                        if (unansweredModuleQuestions.length > 0) {
+                            const unansweredCount = unansweredModuleQuestions.length;
+                            Swal.fire({
+                                icon: 'warning',
+                                title: 'モジュール内に未回答の問題があります',
+                                text: unansweredCount + '個の問題が未解答です。すべての問題に正解してから完了してください。',
+                                confirmButtonText: '前のステップに戻る'
                             });
                             return;
                         }
@@ -2835,7 +2975,18 @@ app.get('/student/modules/:id', async (c) => {
                     if(!btn.innerHTML.includes('fa-check')) {
                         btn.innerHTML += '<i class="fas fa-check float-right text-green-600"></i>';
                     }
-                    if(questionId) answeredQuestions.add(questionId);
+                    if(questionId) {
+                        answeredQuestions.add(questionId);
+                        // 解答履歴を保存
+                        axios.post('/api/answer', {
+                            module_id: MODULE_ID,
+                            step_id: currentStep?.id,
+                            question_id: questionId,
+                            answer: btn.textContent.trim(),
+                            is_correct: true,
+                            explanation: ''
+                        }).catch(e => console.error('解答保存に失敗:', e));
+                    }
                 } else {
                     btn.classList.remove('bg-white', 'hover:bg-indigo-50');
                     btn.classList.add('bg-red-100', 'border-red-500', 'text-red-800');
@@ -2854,7 +3005,18 @@ app.get('/student/modules/:id', async (c) => {
                     input.classList.remove('border-red-500', 'bg-red-50');
                     input.classList.add('border-green-500', 'bg-green-50');
                     Swal.fire({ icon: 'success', text: '正解！', timer: 1500, showConfirmButton: false });
-                    if(questionId) answeredQuestions.add(questionId);
+                    if(questionId) {
+                        answeredQuestions.add(questionId);
+                        // 解答履歴を保存
+                        axios.post('/api/answer', {
+                            module_id: MODULE_ID,
+                            step_id: currentStep?.id,
+                            question_id: questionId,
+                            answer: val,
+                            is_correct: true,
+                            explanation: ''
+                        }).catch(e => console.error('解答保存に失敗:', e));
+                    }
                 } else {
                     input.classList.remove('border-green-500', 'bg-green-50');
                     input.classList.add('border-red-500', 'bg-red-50');
@@ -2879,6 +3041,15 @@ app.get('/student/modules/:id', async (c) => {
                 if (isCorrect) {
                     Swal.fire({ icon: 'success', title: '正解！', text: '正しい順序です' });
                     answeredQuestions.add(questionId);
+                    // 解答履歴を保存
+                    axios.post('/api/answer', {
+                        module_id: MODULE_ID,
+                        step_id: currentStep?.id,
+                        question_id: questionId,
+                        answer: JSON.stringify(userOrder),
+                        is_correct: true,
+                        explanation: ''
+                    }).catch(e => console.error('解答保存に失敗:', e));
                 } else {
                     Swal.fire({ icon: 'error', title: '不正解...', text: 'もう一度挑戦してみましょう' });
                 }
