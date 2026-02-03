@@ -4867,17 +4867,21 @@ app.get('/teacher/steps', (c) => {
           // セクション一覧を読み込み
           async function loadSections() {
             try {
+              console.log('[DEBUG] Loading sections...');
               const response = await axios.get('/api/teacher/sections');
               const sections = response.data.sections;
+              console.log('[DEBUG] Sections loaded:', sections.length, 'items');
               
               const selectEl = document.getElementById('section-select');
               selectEl.innerHTML = '<option value="">セクションを選択...</option>' +
                 sections.map(section => '<option value="' + section.id + '">' + section.name + '</option>').join('');
+              console.log('[DEBUG] Section select populated');
               
               if (initialModuleId) {
                  // 暫定対応: モジュールIDがある場合はモジュールからステップを読み込む
                  // 親のセクション、フェーズの特定はAPI不足のため省略
                  // 本来は /api/teacher/modules/{id} で親フェーズIDなどを取得すべき
+                 console.log('[DEBUG] Initial module ID:', initialModuleId);
                  loadSteps(initialModuleId);
                  document.getElementById('create-step-section').classList.remove('hidden');
               }
@@ -4889,6 +4893,7 @@ app.get('/teacher/steps', (c) => {
           // セクション選択イベントハンドラー（1回だけ設定）
           document.getElementById('section-select').addEventListener('change', (e) => {
             const sectionId = e.target.value;
+            console.log('[DEBUG] Section changed:', sectionId);
             if (sectionId) {
               loadPhases(sectionId);
             } else {
@@ -4901,12 +4906,15 @@ app.get('/teacher/steps', (c) => {
           // フェーズ一覧を読み込み
           async function loadPhases(sectionId) {
             try {
+              console.log('[DEBUG] Loading phases for section:', sectionId);
               const response = await axios.get('/api/teacher/phases?section_id=' + sectionId);
               const phases = response.data.phases;
+              console.log('[DEBUG] Phases loaded:', phases.length, 'items');
               
               const selectEl = document.getElementById('phase-select');
               selectEl.innerHTML = '<option value="">フェーズを選択...</option>' +
                 phases.map(phase => '<option value="' + phase.id + '">' + phase.name + '</option>').join('');
+              console.log('[DEBUG] Phase select populated');
             } catch (error) {
               console.error('フェーズ読み込みエラー:', error);
             }
@@ -4915,6 +4923,7 @@ app.get('/teacher/steps', (c) => {
           // フェーズ選択イベントハンドラー（1回だけ設定）
           document.getElementById('phase-select').addEventListener('change', (e) => {
             const phaseId = e.target.value;
+            console.log('[DEBUG] Phase changed:', phaseId);
             if (phaseId) {
               loadModules(phaseId);
             } else {
@@ -4931,12 +4940,15 @@ app.get('/teacher/steps', (c) => {
           // モジュール一覧を読み込み
           async function loadModules(phaseId) {
             try {
+              console.log('[DEBUG] Loading modules for phase:', phaseId);
               const response = await axios.get('/api/teacher/modules?phase_id=' + phaseId);
               const modules = response.data.modules;
+              console.log('[DEBUG] Modules loaded:', modules.length, 'items');
               
               const selectEl = document.getElementById('module-select');
               selectEl.innerHTML = '<option value="">モジュールを選択...</option>' +
                 modules.map(module => '<option value="' + module.id + '">' + module.name + '</option>').join('');
+              console.log('[DEBUG] Module select populated');
             } catch (error) {
               console.error('モジュールの読み込みエラー:', error);
             }
@@ -4945,6 +4957,7 @@ app.get('/teacher/steps', (c) => {
           // モジュール選択イベントハンドラー（1回だけ設定）
           document.getElementById('module-select').addEventListener('change', (e) => {
             const moduleId = e.target.value;
+            console.log('[DEBUG] Module changed:', moduleId);
             if (moduleId) {
               loadSteps(moduleId);
               document.getElementById('create-step-section').classList.remove('hidden');
@@ -5105,24 +5118,26 @@ app.get('/teacher/steps', (c) => {
           // ステップ削除
           async function deleteStep(id) {
             const { isConfirmed } = await Swal.fire({
-        icon: 'warning',
-        title: '確認',
-        text: '本当にこのステップを削除しますか？\n関連するコンテンツも全て削除されます。',
-        showCancelButton: true,
-        confirmButtonText: 'はい',
-        cancelButtonText: 'いいえ'
-    });
-    if (!isConfirmed) {
+              icon: 'warning',
+              title: '確認',
+              text: '本当にこのステップを削除しますか？関連するコンテンツも全て削除されます。',
+              showCancelButton: true,
+              confirmButtonText: 'はい',
+              cancelButtonText: 'いいえ'
+            });
+            
+            if (!isConfirmed) {
               return;
             }
+            
             try {
-                await axios.delete('/api/teacher/steps/' + id);
-                Swal.fire({ icon: 'success', title: '削除完了', text: '削除しました' });
-                const moduleId = document.getElementById('module-select').value;
-                if(moduleId) loadSteps(moduleId);
+              await axios.delete('/api/teacher/steps/' + id);
+              Swal.fire({ icon: 'success', title: '削除完了', text: '削除しました' });
+              const moduleId = document.getElementById('module-select').value;
+              if(moduleId) loadSteps(moduleId);
             } catch(e) {
-                console.error(e);
-                Swal.fire({ icon: 'error', title: 'エラー', text: '削除に失敗しました' });
+              console.error(e);
+              Swal.fire({ icon: 'error', title: 'エラー', text: '削除に失敗しました' });
             }
           }
           
