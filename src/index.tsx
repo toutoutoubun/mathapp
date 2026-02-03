@@ -2046,6 +2046,24 @@ app.get('/student/modules/:id', async (c) => {
         <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
         <style>
             .content-block { margin-bottom: 2rem; }
+            .highlight-text {
+                transition: background-color 0.2s;
+            }
+            .highlight-text:hover {
+                opacity: 0.8;
+            }
+            .highlight-marker {
+                transition: transform 0.2s;
+            }
+            .highlight-marker:hover {
+                transform: scale(1.2);
+            }
+            #content-area.highlight-mode {
+                user-select: text;
+                -webkit-user-select: text;
+                -moz-user-select: text;
+                -ms-user-select: text;
+            }
         </style>
     </head>
     <body class="bg-gray-50 min-h-screen">
@@ -2057,6 +2075,9 @@ app.get('/student/modules/:id', async (c) => {
                         ${module.name}
                     </h1>
                     <div class="flex items-center gap-2">
+                        <button id="highlight-btn" class="px-3 py-2 border border-yellow-400 bg-yellow-50 text-yellow-700 rounded-md hover:bg-yellow-100 transition text-sm" style="display: none;">
+                            <i class="fas fa-highlighter mr-1"></i>ハイライト
+                        </button>
                         <button id="question-btn" class="px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100 transition text-sm">
                             <i class="fas fa-question-circle mr-1"></i>先生に質問
                         </button>
@@ -2113,6 +2134,7 @@ app.get('/student/modules/:id', async (c) => {
             document.addEventListener('DOMContentLoaded', async () => {
                 cachedUser = getCurrentUser();
                 initializeQuestionButton();
+                initializeHighlightTool();
                 await loadSteps();
             });
 
@@ -2167,6 +2189,164 @@ app.get('/student/modules/:id', async (c) => {
                 if (btn.dataset.bound === 'true') return;
                 btn.addEventListener('click', handleQuestionClick);
                 btn.dataset.bound = 'true';
+            }
+
+            // ハイライトツールの初期化
+            let highlightMode = false;
+            let highlightColor = '#fef08a'; // yellow-200
+
+            function initializeHighlightTool() {
+                const highlightBtn = document.getElementById('highlight-btn');
+                if (!highlightBtn) return;
+
+                // プレビューモードでのみ表示
+                if (IS_PREVIEW || (cachedUser && cachedUser.role === 'teacher')) {
+                    highlightBtn.style.display = 'block';
+                }
+
+                highlightBtn.addEventListener('click', toggleHighlightMode);
+                
+                // カラーピッカーを追加
+                const colorPicker = document.createElement('input');
+                colorPicker.type = 'color';
+                colorPicker.value = highlightColor;
+                colorPicker.className = 'ml-2 h-6 w-6 rounded cursor-pointer';
+                colorPicker.style.display = 'none';
+                colorPicker.id = 'highlight-color-picker';
+                colorPicker.addEventListener('change', (e) => {
+                    highlightColor = e.target.value;
+                });
+                highlightBtn.parentNode.insertBefore(colorPicker, highlightBtn.nextSibling);
+            }
+
+            function toggleHighlightMode() {
+                highlightMode = !highlightMode;
+                const highlightBtn = document.getElementById('highlight-btn');
+                const colorPicker = document.getElementById('highlight-color-picker');
+                
+                if (highlightMode) {
+                    highlightBtn.classList.remove('bg-yellow-50', 'hover:bg-yellow-100');
+                    highlightBtn.classList.add('bg-yellow-200');
+                    highlightBtn.innerHTML = '<i class="fas fa-highlighter mr-1"></i>ハイライト中...';
+                    if (colorPicker) colorPicker.style.display = 'inline-block';
+                    
+                    // コンテンツエリアにハイライトモードを適用
+                    enableHighlightSelection();
+                } else {
+                    highlightBtn.classList.remove('bg-yellow-200');
+                    highlightBtn.classList.add('bg-yellow-50', 'hover:bg-yellow-100');
+                    highlightBtn.innerHTML = '<i class="fas fa-highlighter mr-1"></i>ハイライト';
+                    if (colorPicker) colorPicker.style.display = 'none';
+                    
+                    // ハイライトモードを解除
+                    disableHighlightSelection();
+                }
+            }
+
+            function enableHighlightSelection() {
+                const contentArea = document.getElementById('content-area');
+                if (!contentArea) return;
+
+                contentArea.style.cursor = 'text';
+                
+                // テキスト選択時のイベント
+                contentArea.addEventListener('mouseup', handleTextSelection);
+                
+                // SVG要素（図形・グラフ）のクリックイベント
+                const svgElements = contentArea.querySelectorAll('svg, canvas');
+                svgElements.forEach(el => {
+                    el.style.cursor = 'crosshair';
+                    el.addEventListener('click', handleSvgClick);
+                });
+            }
+
+            function disableHighlightSelection() {
+                const contentArea = document.getElementById('content-area');
+                if (!contentArea) return;
+
+                contentArea.style.cursor = 'default';
+                contentArea.removeEventListener('mouseup', handleTextSelection);
+                
+                const svgElements = contentArea.querySelectorAll('svg, canvas');
+                svgElements.forEach(el => {
+                    el.style.cursor = 'default';
+                    el.removeEventListener('click', handleSvgClick);
+                });
+            }
+
+            function handleTextSelection(e) {
+                if (!highlightMode) return;
+                
+                const selection = window.getSelection();
+                if (!selection || selection.rangeCount === 0) return;
+                
+                const range = selection.getRangeAt(0);
+                const selectedText = selection.toString().trim();
+                
+                if (selectedText.length === 0) return;
+
+                // 選択範囲をハイライト
+                const span = document.createElement('span');
+                span.className = 'highlight-text';
+                span.style.backgroundColor = highlightColor;
+                span.style.padding = '2px 0';
+                span.style.borderRadius = '2px';
+                span.style.position = 'relative';
+                span.style.cursor = 'pointer';
+                
+                // 削除ボタンを追加
+                span.title = 'クリックで削除';
+                span.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    if (confirm('このハイライトを削除しますか？')) {
+                        const parent = this.parentNode;
+                        while (this.firstChild) {
+                            parent.insertBefore(this.firstChild, this);
+                        }
+                        parent.removeChild(this);
+                    }
+                });
+
+                try {
+                    range.surroundContents(span);
+                    selection.removeAllRanges();
+                } catch (e) {
+                    console.log('ハイライトできない範囲です');
+                }
+            }
+
+            function handleSvgClick(e) {
+                if (!highlightMode) return;
+                
+                const svg = e.currentTarget;
+                const rect = svg.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                // マーカーを追加
+                const marker = document.createElement('div');
+                marker.className = 'highlight-marker';
+                marker.style.position = 'absolute';
+                marker.style.left = (rect.left + x - 10) + 'px';
+                marker.style.top = (rect.top + y - 10 + window.scrollY) + 'px';
+                marker.style.width = '20px';
+                marker.style.height = '20px';
+                marker.style.borderRadius = '50%';
+                marker.style.backgroundColor = highlightColor;
+                marker.style.border = '2px solid #000';
+                marker.style.opacity = '0.6';
+                marker.style.cursor = 'pointer';
+                marker.style.zIndex = '1000';
+                marker.title = 'クリックで削除';
+                
+                marker.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    if (confirm('このマーカーを削除しますか？')) {
+                        this.remove();
+                    }
+                });
+                
+                document.body.appendChild(marker);
             }
 
             async function showQuestionHistory() {
