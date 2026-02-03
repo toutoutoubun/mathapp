@@ -1782,12 +1782,12 @@ app.get('/student', (c) => {
                     
                     // プレビュー用ヘッダーを表示
                     const previewHeader = document.createElement('div');
-                    previewHeader.className = 'bg-orange-500 text-white px-4 py-2 flex justify-between items-center shadow-md relative z-50';
+                    previewHeader.className = 'bg-gray-700 text-white px-4 py-2 flex justify-between items-center border-b relative z-50';
                     previewHeader.innerHTML = \`
-                        <div class="font-bold flex items-center">
+                        <div class="font-medium flex items-center text-sm">
                             <i class="fas fa-eye mr-2"></i>教師用プレビューモード
                         </div>
-                        <button onclick="exitPreview()" class="bg-white text-orange-600 px-4 py-1 rounded font-bold hover:bg-gray-100 transition text-sm">
+                        <button onclick="exitPreview()" class="bg-white text-gray-700 px-3 py-1 rounded text-sm hover:bg-gray-100 transition">
                             <i class="fas fa-times mr-1"></i>プレビュー終了
                         </button>
                     \`;
@@ -6652,31 +6652,31 @@ app.get('/student/glossary', async (c) => {
         <script src="https://cdn.tailwindcss.com"></script>
         <link href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css" rel="stylesheet">
     </head>
-    <body class="bg-gradient-to-br from-yellow-50 to-orange-50 min-h-screen">
-        <nav class="bg-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 py-4">
+    <body class="bg-gray-50 min-h-screen">
+        <nav class="bg-white shadow-sm border-b">
+            <div class="max-w-7xl mx-auto px-4 py-3">
                 <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold text-yellow-600">
-                        <i class="fas fa-book mr-2"></i>用語集
+                    <h1 class="text-xl font-bold text-gray-800">
+                        <i class="fas fa-book mr-2 text-gray-600"></i>用語集
                     </h1>
-                    <a href="/student" class="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition">
-                        <i class="fas fa-home mr-2"></i>ホーム
+                    <a href="/student" class="px-3 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-800 transition text-sm">
+                        <i class="fas fa-home mr-1"></i>ホーム
                     </a>
                 </div>
             </div>
         </nav>
 
-        <div class="max-w-5xl mx-auto px-4 py-8">
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
+        <div class="max-w-5xl mx-auto px-4 py-6">
+            <div class="bg-white rounded-lg shadow-sm border p-6 mb-6">
                 <div class="mb-6">
                     <input type="text" id="search-input" 
                            placeholder="用語を検索..." 
-                           class="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:border-yellow-500 focus:ring-2 focus:ring-yellow-200 focus:outline-none transition">
+                           class="w-full px-4 py-3 border border-gray-300 rounded-md focus:border-gray-400 focus:ring-2 focus:ring-gray-200 focus:outline-none transition">
                 </div>
 
                 <div id="glossary-list" class="space-y-4">
                     <div class="text-center py-12">
-                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-yellow-500 mx-auto"></div>
+                        <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-600 mx-auto"></div>
                     </div>
                 </div>
             </div>
@@ -6705,18 +6705,18 @@ app.get('/student/glossary', async (c) => {
                         }
                         
                         listContainer.innerHTML = items.map(item => \`
-                            <div class="border-l-4 border-yellow-400 bg-white rounded-r-lg shadow-sm p-6 hover:shadow-md transition">
+                            <div class="border-l-4 border-gray-700 bg-white rounded-r-lg border p-4 hover:bg-gray-50 transition">
                                 <div class="flex justify-between items-start mb-2">
                                     <div>
-                                        <h3 class="text-xl font-bold text-gray-800">\${item.term}</h3>
+                                        <h3 class="text-lg font-bold text-gray-800">\${item.term}</h3>
                                         \${item.reading ? \`<p class="text-xs text-gray-500">\${item.reading}</p>\` : ''}
                                     </div>
                                     \${item.category ? \`<span class="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">\${item.category}</span>\` : ''}
                                 </div>
                                 <p class="text-gray-700 mb-3 whitespace-pre-wrap">\${item.definition}</p>
                                 \${item.example ? \`
-                                    <div class="bg-yellow-50 p-3 rounded text-sm text-gray-700 border border-yellow-100">
-                                        <span class="font-bold text-yellow-700 mr-2">例:</span> \${item.example}
+                                    <div class="bg-gray-50 p-3 rounded text-sm text-gray-700 border border-gray-200">
+                                        <span class="font-bold text-gray-700 mr-2">例:</span> \${item.example}
                                     </div>
                                 \` : ''}
                             </div>
