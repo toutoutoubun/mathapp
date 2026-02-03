@@ -1693,28 +1693,28 @@ app.get('/student', (c) => {
         <link href="/static/style.css" rel="stylesheet">
         <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
     </head>
-    <body class="bg-gradient-to-br from-blue-50 to-purple-50 min-h-screen">
+    <body class="bg-gray-50 min-h-screen">
         <!-- ナビゲーションバー -->
-        <nav class="bg-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 py-4">
+        <nav class="bg-white shadow-sm border-b">
+            <div class="max-w-7xl mx-auto px-4 py-3">
                 <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold text-purple-600">
-                        <i class="fas fa-graduation-cap mr-2"></i>
+                    <h1 class="text-xl font-bold text-gray-800">
+                        <i class="fas fa-graduation-cap mr-2 text-gray-600"></i>
                         学習アプリ
                     </h1>
-                    <div class="flex gap-4 items-center">
+                    <div class="flex gap-3 items-center">
                         <!-- セクション選択プルダウン -->
-                        <select id="section-select" class="px-4 py-2 border-2 border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none">
-                            <option value="">学年を選択...</option>
+                        <select id="section-select" class="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-gray-400 focus:outline-none text-sm">
+                            <option value="">すべての学年</option>
                         </select>
-                        <a href="/student" class="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition">
-                            <i class="fas fa-home mr-2"></i>ホーム
+                        <a href="/student" class="px-3 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-800 transition text-sm">
+                            <i class="fas fa-home mr-1"></i>ホーム
                         </a>
-                        <a href="/student/glossary" class="px-4 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600 transition">
-                            <i class="fas fa-book mr-2"></i>用語集
+                        <a href="/student/glossary" class="px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100 transition text-sm">
+                            <i class="fas fa-book mr-1"></i>用語集
                         </a>
-                        <a href="/" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
-                            <i class="fas fa-sign-out-alt mr-2"></i>ログアウト
+                        <a href="/" class="px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100 transition text-sm">
+                            <i class="fas fa-sign-out-alt mr-1"></i>ログアウト
                         </a>
                     </div>
                 </div>
@@ -1722,52 +1722,29 @@ app.get('/student', (c) => {
         </nav>
 
         <!-- メインコンテンツ -->
-        <div class="max-w-7xl mx-auto px-4 py-8">
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <h2 class="text-3xl font-bold text-gray-800 mb-4">ようこそ!</h2>
-                <p class="text-lg text-gray-600 mb-6">
+        <div class="max-w-7xl mx-auto px-4 py-6">
+            <div class="bg-white rounded-lg shadow-sm p-6 mb-6 border">
+                <h2 class="text-2xl font-bold text-gray-800 mb-2">ようこそ!</h2>
+                <p class="text-sm text-gray-600">
                     自分のペースで学習を進めていきましょう。
                 </p>
             </div>
 
-            <!-- 利用可能なコンテンツ -->
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8">
-                <div class="flex justify-between items-center mb-6">
-                    <h3 class="text-2xl font-bold text-gray-800">
-                        <i class="fas fa-book-open mr-2 text-blue-600"></i>
-                        利用可能な学習コンテンツ
-                    </h3>
-                    
-                    <!-- コード参加フォーム -->
-                    <form id="join-form" class="flex gap-2">
-                        <input type="text" name="access_code" placeholder="クラスコードを入力" required
-                               class="px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 uppercase font-mono">
-                        <button type="submit" class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
-                            参加
-                        </button>
-                    </form>
-                </div>
-                
-                <p class="text-gray-600 mb-6">
-                    作成されたコンテンツがここに表示されます。
-                </p>
-                
-                <div id="modules-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    <!-- Dynamic Content Will Be Loaded Here -->
-                    <div class="text-center col-span-full py-8">
-                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600 mx-auto"></div>
-                    </div>
-                </div>
+            <!-- クラスコード参加フォーム -->
+            <div class="bg-white rounded-lg shadow-sm p-4 mb-6 border">
+                <form id="join-form" class="flex gap-2">
+                    <input type="text" name="access_code" placeholder="クラスコードを入力" required
+                           class="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-gray-400 uppercase font-mono text-sm">
+                    <button type="submit" class="px-4 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-800 transition text-sm">
+                        <i class="fas fa-plus mr-1"></i>参加
+                    </button>
+                </form>
             </div>
 
-            <!-- 進捗状況 -->
-            <div class="bg-white rounded-xl shadow-lg p-8">
-                <h3 class="text-2xl font-bold text-gray-800 mb-6">
-                    <i class="fas fa-chart-line mr-2"></i>
-                    あなたの進捗
-                </h3>
-                <div id="progress-container" class="space-y-4">
-                    <p class="text-gray-500">学習を始めると、ここに進捗が表示されます。</p>
+            <!-- コンテンツをモジュール別に表示 -->
+            <div id="modules-container">
+                <div class="text-center py-8">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-600 mx-auto"></div>
                 </div>
             </div>
         </div>
@@ -1880,146 +1857,145 @@ app.get('/student', (c) => {
 
             // データ読み込み関数
             async function loadDashboardData() {
-                const container = document.getElementById('modules-grid');
-                const progressContainer = document.getElementById('progress-container');
+                const container = document.getElementById('modules-container');
                 const sectionSelect = document.getElementById('section-select');
                 
-                // データ保持用
-                let allPhaseProgress = [];
-
                 try {
                     // 1. ダッシュボードデータ一括取得
                     const res = await axios.get('/api/student/dashboard');
                     const { sections, phases, modules } = res.data;
                     
-                    if (sectionSelect && sectionSelect.options.length <= 1) { // 既に読み込まれていればスキップ
+                    // 2. セクションセレクトボックスの初期化
+                    if (sectionSelect && sectionSelect.options.length <= 1) {
                         sectionSelect.innerHTML = '<option value="">すべての学年</option>' + 
                             sections.map(s => \`<option value="\${s.id}">\${s.name}</option>\`).join('');
                     }
                     
-                    // 2. コンテンツ一覧表示
-                    let hasContent = false;
-                    const cardsHtml = [];
-
-                    // マップ作成
-                    const sectionMap = new Map(sections.map(s => [s.id, s.name]));
-                    const phaseMap = new Map(phases.map(p => [p.id, p]));
-
+                    // 3. データの構造化: Section -> Phase -> Modules
+                    const sectionMap = new Map(sections.map(s => [s.id, { ...s, phases: [] }]));
+                    const phaseMap = new Map(phases.map(p => [p.id, { ...p, modules: [] }]));
+                    
+                    // モジュールをフェーズに追加
                     modules.forEach(module => {
-                        hasContent = true;
                         const phase = phaseMap.get(module.phase_id);
-                        const sectionName = phase ? sectionMap.get(phase.section_id) : '不明';
-                        const phaseName = phase ? phase.name : '不明';
-                        // module.section_id があればそれを使い、なければ phase.section_id を使う
-                        const sectionId = module.section_id || (phase ? phase.section_id : '');
-                        
-                        const colorClass = module.color ? \`from-\${module.color}-100 to-\${module.color}-200\` : 'from-indigo-100 to-purple-200';
-                        
-                        cardsHtml.push(\`
-                            <a href="/student/modules/\${module.id}" 
-                               class="module-card block p-6 bg-gradient-to-br \${colorClass} rounded-lg hover:shadow-xl transition transform hover:-translate-y-1"
-                               data-section-id="\${sectionId}">
-                                <div class="text-4xl mb-4">\${module.icon || '📝'}</div>
-                                <h4 class="text-xl font-bold text-gray-800 mb-2">\${module.name}</h4>
-                                <p class="text-gray-600 text-xs font-bold uppercase tracking-wide opacity-70 mb-2">
-                                    \${sectionName} &gt; \${phaseName}
-                                </p>
-                                <p class="text-gray-600 text-sm line-clamp-2">
-                                    \${module.description || '説明なし'}
-                                </p>
-                                <div class="mt-4 text-sm font-semibold opacity-80">
-                                    学習を始める →
-                                </div>
-                            </a>
-                        \`);
+                        if (phase) {
+                            phase.modules.push(module);
+                        }
                     });
                     
-                    if (!hasContent) {
-                        container.innerHTML = \`
-                            <div class="col-span-full text-center py-12 bg-gray-50 rounded-xl">
-                                <p class="text-gray-500">まだコンテンツが公開されていません。</p>
-                            </div>
-                        \`;
-                    } else {
-                        container.innerHTML = cardsHtml.join('') + \`
-                            <div id="empty-message" class="col-span-full text-center py-12 bg-gray-50 rounded-xl" style="display: none;">
-                                <p class="text-gray-500">この学年にはコンテンツがありません。</p>
-                            </div>
-                        \`;
-                    }
-
-                    // 3. 進捗状況の取得と表示
-                    const progressRes = await axios.get('/api/student/phase-progress');
-                    allPhaseProgress = progressRes.data.progress;
+                    // フェーズをセクションに追加
+                    phases.forEach(phase => {
+                        const section = sectionMap.get(phase.section_id);
+                        const phaseData = phaseMap.get(phase.id);
+                        if (section && phaseData && phaseData.modules.length > 0) {
+                            section.phases.push(phaseData);
+                        }
+                    });
                     
-                    // 進捗バー描画関数
-                    const renderProgress = (filterSectionId = '') => {
-                        if (!progressContainer) return;
+                    // 4. 進捗データ取得
+                    const progressRes = await axios.get('/api/student/phase-progress');
+                    const progressMap = new Map(progressRes.data.progress.map(p => [p.phase_id, p]));
+                    
+                    // 5. モジュール別表示のレンダリング
+                    const renderModules = (filterSectionId = '') => {
+                        const sectionsToDisplay = filterSectionId 
+                            ? [sectionMap.get(parseInt(filterSectionId))].filter(Boolean)
+                            : Array.from(sectionMap.values()).filter(s => s.phases.length > 0);
                         
-                        // フィルタリング
-                        const displayProgress = filterSectionId 
-                            ? allPhaseProgress.filter(p => p.section_id == filterSectionId)
-                            : allPhaseProgress;
-
-                        if (displayProgress.length === 0) {
-                            progressContainer.innerHTML = '<p class="text-gray-500">表示する進捗データがありません。</p>';
+                        if (sectionsToDisplay.length === 0) {
+                            container.innerHTML = \`
+                                <div class="text-center py-12 bg-white rounded-lg border">
+                                    <p class="text-gray-500">まだコンテンツが公開されていません。</p>
+                                </div>
+                            \`;
                             return;
                         }
-
-                        // 進捗があるフェーズのみ表示、または全フェーズ表示？
-                        // ここでは全フェーズ表示し、進捗0%でも表示する
-                        progressContainer.innerHTML = displayProgress.map(p => \`
-                            <div class="mb-4">
-                                <div class="flex justify-between mb-1">
-                                    <span class="text-sm font-medium text-gray-700">
-                                        <span class="text-xs bg-gray-200 text-gray-600 px-2 py-0.5 rounded mr-2">\${p.section_name}</span>
-                                        \${p.phase_name}
-                                    </span>
-                                    <span class="text-sm font-medium text-blue-700">\${p.percentage}%</span>
+                        
+                        let html = '';
+                        
+                        sectionsToDisplay.forEach(section => {
+                            html += \`
+                                <div class="bg-white rounded-lg shadow-sm border mb-6" data-section-id="\${section.id}">
+                                    <div class="p-4 border-b bg-gray-50">
+                                        <h3 class="text-lg font-bold text-gray-800">\${section.name}</h3>
+                                        <p class="text-sm text-gray-600 mt-1">\${section.description || ''}</p>
+                                    </div>
+                                    <div class="p-4 space-y-4">
+                            \`;
+                            
+                            section.phases.forEach(phase => {
+                                const progress = progressMap.get(phase.id);
+                                const percentage = progress ? progress.percentage : 0;
+                                const completedSteps = progress ? progress.completed_steps : 0;
+                                const totalSteps = progress ? progress.total_steps : 0;
+                                
+                                html += \`
+                                    <div class="border rounded-lg p-4 hover:border-gray-400 transition">
+                                        <div class="flex justify-between items-start mb-3">
+                                            <div>
+                                                <h4 class="font-bold text-gray-800">\${phase.name}</h4>
+                                                <p class="text-sm text-gray-600 mt-1">\${phase.description || ''}</p>
+                                            </div>
+                                            <span class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">\${percentage}%</span>
+                                        </div>
+                                        
+                                        <!-- 進捗バー -->
+                                        <div class="w-full bg-gray-200 rounded-full h-1.5 mb-3">
+                                            <div class="bg-gray-600 h-1.5 rounded-full" style="width: \${percentage}%"></div>
+                                        </div>
+                                        
+                                        <!-- モジュール一覧 -->
+                                        <div class="space-y-2">
+                                \`;
+                                
+                                phase.modules.forEach(module => {
+                                    html += \`
+                                        <a href="/student/modules/\${module.id}" 
+                                           class="block p-3 bg-gray-50 rounded hover:bg-gray-100 transition border border-gray-200">
+                                            <div class="flex items-center justify-between">
+                                                <div class="flex items-center gap-3">
+                                                    <span class="text-2xl">\${module.icon || '📝'}</span>
+                                                    <div>
+                                                        <div class="font-medium text-gray-800">\${module.name}</div>
+                                                        <div class="text-xs text-gray-500">\${module.description || ''}</div>
+                                                    </div>
+                                                </div>
+                                                <i class="fas fa-chevron-right text-gray-400"></i>
+                                            </div>
+                                        </a>
+                                    \`;
+                                });
+                                
+                                html += \`
+                                        </div>
+                                    </div>
+                                \`;
+                            });
+                            
+                            html += \`
+                                    </div>
                                 </div>
-                                <div class="w-full bg-gray-200 rounded-full h-2.5">
-                                    <div class="bg-blue-600 h-2.5 rounded-full transition-all duration-500" style="width: \${p.percentage}%"></div>
-                                </div>
-                                <div class="text-right text-xs text-gray-400 mt-1">
-                                    \${p.completed_steps} / \${p.total_steps} ステップ完了
-                                </div>
-                            </div>
-                        \`).join('');
+                            \`;
+                        });
+                        
+                        container.innerHTML = html;
                     };
                     
-                    renderProgress(sectionSelect ? sectionSelect.value : '');
+                    renderModules(sectionSelect ? sectionSelect.value : '');
                     
-                    // セレクトボックスのイベント設定（既にある場合は上書き）
+                    // 6. セレクトボックスのイベント設定
                     if (sectionSelect) {
-                        // クローンして置換することでイベントリスナーをリセット
                         const newSelect = sectionSelect.cloneNode(true);
                         sectionSelect.parentNode.replaceChild(newSelect, sectionSelect);
                         
                         newSelect.addEventListener('change', (e) => {
-                            const selectedId = e.target.value;
-                            
-                            // コンテンツカードのフィルタリング
-                            const cards = document.querySelectorAll('.module-card');
-                            let hasVisible = false;
-                            cards.forEach(card => {
-                                if (!selectedId || card.dataset.sectionId === selectedId) {
-                                    card.style.display = 'block';
-                                    hasVisible = true;
-                                } else {
-                                    card.style.display = 'none';
-                                }
-                            });
-                            
-                            const emptyMsg = document.getElementById('empty-message');
-                            if (emptyMsg) emptyMsg.style.display = hasVisible ? 'none' : 'block';
-
-                            renderProgress(selectedId);
+                            renderModules(e.target.value);
                         });
                     }
 
                 } catch (e) {
                     console.error(e);
-                    container.innerHTML = '<p class="text-red-500 col-span-full text-center">コンテンツの読み込みに失敗しました。</p>';
+                    container.innerHTML = '<p class="text-red-500 text-center">コンテンツの読み込みに失敗しました。</p>';
                 }
             }
 
@@ -2073,45 +2049,45 @@ app.get('/student/modules/:id', async (c) => {
         </style>
     </head>
     <body class="bg-gray-50 min-h-screen">
-        <nav class="bg-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 py-4">
+        <nav class="bg-white shadow-sm border-b">
+            <div class="max-w-7xl mx-auto px-4 py-3">
                 <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold text-indigo-600">
-                        <i class="fas fa-graduation-cap mr-2"></i>
+                    <h1 class="text-xl font-bold text-gray-800">
+                        <i class="fas fa-book-open mr-2 text-gray-600"></i>
                         ${module.name}
                     </h1>
-                    <div class="flex items-center gap-3">
-                        <button id="question-btn" class="px-4 py-2 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition shadow-sm">
-                            <i class="fas fa-question-circle mr-2"></i>先生に質問する
+                    <div class="flex items-center gap-2">
+                        <button id="question-btn" class="px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100 transition text-sm">
+                            <i class="fas fa-question-circle mr-1"></i>先生に質問
                         </button>
-                        <button id="history-btn" onclick="showQuestionHistory()" class="px-4 py-2 bg-teal-500 text-white rounded-lg hover:bg-teal-600 transition shadow-sm">
-                            <i class="fas fa-history mr-2"></i>質問履歴
+                        <button id="history-btn" onclick="showQuestionHistory()" class="px-3 py-2 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-100 transition text-sm">
+                            <i class="fas fa-history mr-1"></i>質問履歴
                         </button>
-                        <a href="${homeLink}" class="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition">
-                            <i class="fas fa-home mr-2"></i>${homeText}
+                        <a href="${homeLink}" class="px-3 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-800 transition text-sm">
+                            <i class="fas fa-home mr-1"></i>${homeText}
                         </a>
                     </div>
                 </div>
             </div>
         </nav>
 
-        <div class="max-w-4xl mx-auto px-4 py-8">
-            <div class="bg-white rounded-xl shadow p-4 mb-6 overflow-x-auto">
+        <div class="max-w-4xl mx-auto px-4 py-6">
+            <div class="bg-white rounded-lg shadow-sm border p-3 mb-4 overflow-x-auto">
                 <div class="flex space-x-2" id="step-nav"></div>
             </div>
 
-            <div class="bg-white rounded-xl shadow-lg p-8 mb-8 min-h-[400px]" id="content-area">
+            <div class="bg-white rounded-lg shadow-sm border p-6 mb-4 min-h-[400px]" id="content-area">
                 <div class="text-center py-12">
-                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600 mx-auto"></div>
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-600 mx-auto"></div>
                     <p class="mt-4 text-gray-500">読み込み中...</p>
                 </div>
             </div>
 
             <div class="flex justify-between">
-                <button id="prev-btn" class="px-6 py-3 bg-gray-300 text-gray-600 rounded-lg disabled:opacity-50" disabled>
+                <button id="prev-btn" class="px-5 py-2 border border-gray-300 text-gray-700 rounded-md disabled:opacity-50 hover:bg-gray-100 transition" disabled>
                     <i class="fas fa-arrow-left mr-2"></i>前へ
                 </button>
-                <button id="next-btn" class="px-6 py-3 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700">
+                <button id="next-btn" class="px-5 py-2 bg-gray-700 text-white rounded-md hover:bg-gray-800 transition">
                     次へ<i class="fas fa-arrow-right ml-2"></i>
                 </button>
             </div>
@@ -2382,7 +2358,7 @@ app.get('/student/modules/:id', async (c) => {
                 const nav = document.getElementById('step-nav');
                 nav.innerHTML = steps.map((step, index) => \`
                     <button onclick="loadStepContent(\${index})" 
-                            class="step-btn px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition \${index === currentStepIndex ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
+                            class="step-btn px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition \${index === currentStepIndex ? 'bg-gray-700 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}"
                             data-index="\${index}">
                         \${index + 1}. \${step.title}
                     </button>
@@ -2399,9 +2375,9 @@ app.get('/student/modules/:id', async (c) => {
                 
                 document.querySelectorAll('.step-btn').forEach(btn => {
                     if (parseInt(btn.dataset.index) === index) {
-                        btn.className = 'step-btn px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition bg-indigo-600 text-white';
+                        btn.className = 'step-btn px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition bg-gray-700 text-white';
                     } else {
-                        btn.className = 'step-btn px-4 py-2 rounded-lg text-sm font-bold whitespace-nowrap transition bg-gray-100 text-gray-600 hover:bg-gray-200';
+                        btn.className = 'step-btn px-4 py-2 rounded-md text-sm font-medium whitespace-nowrap transition bg-gray-100 text-gray-600 hover:bg-gray-200';
                     }
                 });
 
@@ -2492,10 +2468,10 @@ app.get('/student/modules/:id', async (c) => {
                     } else if (item.type === 'question') {
                         const q = item;
                         html += \`
-                            <div class="bg-indigo-50 p-6 rounded-xl border border-indigo-100">
+                            <div class="bg-gray-50 p-6 rounded-lg border border-gray-200">
                                 <div class="flex items-center gap-2 mb-4">
-                                    <span class="bg-indigo-600 text-white text-xs font-bold px-2 py-1 rounded">問題</span>
-                                    <h3 class="font-bold text-indigo-900">\${q.question_text}</h3>
+                                    <span class="bg-gray-700 text-white text-xs font-bold px-2 py-1 rounded">問題</span>
+                                    <h3 class="font-bold text-gray-800">\${q.question_text}</h3>
                                 </div>
                         \`;
 
@@ -2503,7 +2479,7 @@ app.get('/student/modules/:id', async (c) => {
                             html += '<div class="space-y-2">';
                             q.options.forEach(opt => {
                                 html += \`
-                                    <button onclick="checkAnswer(this, \${opt.is_correct}, \${q.id})" class="w-full p-4 text-left bg-white border border-indigo-200 rounded-lg hover:bg-indigo-50 transition shadow-sm">
+                                    <button onclick="checkAnswer(this, \${opt.is_correct}, \${q.id})" class="w-full p-4 text-left bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition">
                                         \${opt.option_text}
                                     </button>
                                 \`;
@@ -2513,8 +2489,8 @@ app.get('/student/modules/:id', async (c) => {
                             const correct = q.options.find(o => o.is_correct)?.option_text || '';
                             html += \`
                                 <div class="flex gap-2">
-                                    <input type="text" id="input-\${q.id}" class="flex-1 p-3 border rounded-lg focus:ring-2 focus:ring-indigo-500" placeholder="回答を入力">
-                                    <button onclick="checkShortAnswer('input-\${q.id}', '\${correct}', \${q.id})" class="bg-indigo-600 text-white px-6 rounded-lg font-bold hover:bg-indigo-700">回答</button>
+                                    <input type="text" id="input-\${q.id}" class="flex-1 p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-gray-400" placeholder="回答を入力">
+                                    <button onclick="checkShortAnswer('input-\${q.id}', '\${correct}', \${q.id})" class="bg-gray-700 text-white px-6 rounded-lg font-bold hover:bg-gray-800">回答</button>
                                 </div>
                             \`;
                         } else if (q.question_type === 'ordering') {
@@ -2522,13 +2498,13 @@ app.get('/student/modules/:id', async (c) => {
                             html += \`
                                 <div id="sortable-q-\${q.id}" class="space-y-2 mb-4">
                                     \${shuffledOptions.map(opt => \`
-                                        <div class="p-3 bg-white border border-indigo-200 rounded-lg cursor-move flex items-center gap-3 shadow-sm hover:bg-indigo-50 transition" data-id="\${opt.id}">
-                                            <i class="fas fa-grip-vertical text-indigo-300"></i>
-                                            <span class="text-indigo-900 font-medium">\${opt.option_text}</span>
+                                        <div class="p-3 bg-white border border-gray-300 rounded-lg cursor-move flex items-center gap-3 hover:bg-gray-100 transition" data-id="\${opt.id}">
+                                            <i class="fas fa-grip-vertical text-gray-400"></i>
+                                            <span class="text-gray-800 font-medium">\${opt.option_text}</span>
                                         </div>
                                     \`).join('')}
                                 </div>
-                                <button onclick="checkOrdering(\${q.id})" class="bg-indigo-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-indigo-700 transition w-full md:w-auto shadow">
+                                <button onclick="checkOrdering(\${q.id})" class="bg-gray-700 text-white px-6 py-2 rounded-lg font-bold hover:bg-gray-800 transition w-full md:w-auto">
                                     <i class="fas fa-check-circle mr-2"></i>回答する
                                 </button>
                             \`;
@@ -2555,14 +2531,14 @@ app.get('/student/modules/:id', async (c) => {
                     // ブロックのグラフとチャート初期化
                     allItems.filter(item => item.type === 'block').forEach(b => {
                         if(b.block_type === 'graph') {
-                            const data = [{ fn: b.content.fn, color: '#4f46e5' }];
+                            const data = [{ fn: b.content.fn, color: '#374151' }];
                             if (b.content.points) {
                                 b.content.points.forEach(p => {
                                     data.push({
                                         points: [[parseFloat(p.x), parseFloat(p.y)]],
                                         fnType: 'points',
                                         graphType: 'scatter',
-                                        color: p.color || 'red',
+                                        color: p.color || '#ef4444',
                                         attr: { r: 4 }
                                     });
                                 });
@@ -2576,7 +2552,7 @@ app.get('/student/modules/:id', async (c) => {
                                         ],
                                         fnType: 'points',
                                         graphType: 'polyline',
-                                        color: s.color || 'green'
+                                        color: s.color || '#10b981'
                                     });
                                 });
                             }
@@ -2604,8 +2580,8 @@ app.get('/student/modules/:id', async (c) => {
                                             datasets: [{
                                                 label: b.content.title || 'データ',
                                                 data: (b.content.data || '').split(',').map(Number),
-                                                backgroundColor: b.content.color || '#3b82f6',
-                                                borderColor: b.content.color || '#3b82f6'
+                                                backgroundColor: b.content.color || '#374151',
+                                                borderColor: b.content.color || '#374151'
                                             }]
                                         },
                                         options: { responsive: true, maintainAspectRatio: false }
