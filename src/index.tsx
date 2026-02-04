@@ -143,7 +143,10 @@ app.use('/api/student/*', async (c, next) => {
 app.post('/api/teacher/students', async (c) => {
     const { DB } = c.env;
     const user = c.get('user'); // 教師情報
+    console.log('[DEBUG] Teacher user:', user);
+    
     let { username, password } = await c.req.json();
+    console.log('[DEBUG] Request body:', { username, password });
     
     // 入力の正規化
     if (username && typeof username === 'string') username = username.trim();
@@ -159,20 +162,25 @@ app.post('/api/teacher/students', async (c) => {
         password = Math.floor(100000 + Math.random() * 900000).toString();
     }
     
+    console.log('[DEBUG] Generated:', { username, password });
+    
     try {
         // 1. ユーザー作成
         const userRes = await DB.prepare(
             'INSERT INTO users (username, password, role) VALUES (?, ?, ?)'
         ).bind(username, password, 'student').run();
         const studentId = userRes.meta.last_row_id;
+        console.log('[DEBUG] Student created with ID:', studentId);
         
         // 2. 教師との紐付け
         await DB.prepare(
             'INSERT INTO teacher_students (teacher_id, student_id) VALUES (?, ?)'
         ).bind(user.id, studentId).run();
+        console.log('[DEBUG] Teacher-student link created');
         
         return c.json({ success: true, id: studentId, username, password });
     } catch(e) {
+        console.error('[ERROR] Student creation failed:', e);
         return c.json({ error: '作成に失敗しました。ユーザー名が重複している可能性があります。' }, 400);
     }
 });
@@ -7028,11 +7036,23 @@ app.get('/teacher/students', (c) => {
                 
                 document.getElementById('generate-code-btn').addEventListener('click', async () => {
                     try {
+                        console.log('[DEBUG] Generating student code...');
                         const res = await axios.post('/api/teacher/students', {});
-                        await Swal.fire({ icon: 'info', text: '生徒コードを発行しました！\n\n生徒コード: ' + res.data.username + '\n初期パスワード: ' + res.data.password + '\n\nこの情報を控えて生徒に伝えてください。' });
+                        console.log('[DEBUG] Response:', res.data);
+                        await Swal.fire({ 
+                            icon: 'success', 
+                            title: '生徒コード発行完了',
+                            html: '生徒コードを発行しました！<br><br><b>生徒コード:</b> ' + res.data.username + '<br><b>初期パスワード:</b> ' + res.data.password + '<br><br>この情報を控えて生徒に伝えてください。' 
+                        });
                         loadData();
                     } catch(e) {
-                        Swal.fire({ icon: 'error', title: 'エラー', text: '発行に失敗しました' });
+                        console.error('[ERROR] Failed to generate code:', e);
+                        if (e.response) {
+                            console.error('[ERROR] Response:', e.response.data);
+                            Swal.fire({ icon: 'error', title: 'エラー', text: e.response.data.error || '発行に失敗しました' });
+                        } else {
+                            Swal.fire({ icon: 'error', title: 'エラー', text: '発行に失敗しました' });
+                        }
                     }
                 });
 
