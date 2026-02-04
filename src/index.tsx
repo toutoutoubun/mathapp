@@ -2940,6 +2940,12 @@ app.get('/student/modules/:id', async (c) => {
 
             function renderContent(step, blocks, questions) {
                 currentQuestions = questions;
+                console.log('[DEBUG] renderContent called');
+                console.log('[DEBUG] Blocks:', blocks.length);
+                console.log('[DEBUG] Questions:', questions.length);
+                if (questions.length > 0) {
+                    console.log('[DEBUG] First question:', questions[0]);
+                }
                 const container = document.getElementById('content-area');
                 let html = \`
                     <h2 class="text-3xl font-bold text-gray-800 mb-2">\${step.title}</h2>
